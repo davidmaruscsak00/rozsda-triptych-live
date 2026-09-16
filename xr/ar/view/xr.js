@@ -14,6 +14,7 @@ import { summonPanel, togglePanel, updatePanel, drawPanel, setPanelExit } from '
 let xrSession = null, xrSpace = null, xrFbo = null;
 const selecting = new Set();              // input sources mid-select (hand pinches)
 let headPose = null;
+let panelUser = null;                      // the input source using the panel this frame
 setPanelExit(() => { if (xrSession) xrSession.end(); });
 function headFwd(q) {                       // head forward, flattened to the floor
   const fx = -(2 * (q.x * q.z + q.w * q.y));
@@ -100,7 +101,7 @@ async function enterAR() {
   try {
     await gl.makeXRCompatible();
     const s = await navigator.xr.requestSession('immersive-ar',
-      { optionalFeatures: ['local-floor'] });
+      { optionalFeatures: ['local-floor', 'hand-tracking'] });
     xrSession = s;
     // antialias:true gives 4x MSAA that resolves inside tile memory on Adreno.
     // alpha:true is what lets passthrough through wherever nothing is drawn.
@@ -116,7 +117,8 @@ async function enterAR() {
     s.addEventListener('selectstart', e => selecting.add(e.inputSource));
     s.addEventListener('selectend', e => selecting.delete(e.inputSource));
     s.addEventListener('select', (e) => {
-      if (e.inputSource.handedness === 'left') place.carrying = !place.carrying;
+      // a pinch or trigger aimed at the panel belongs to the panel
+      if (e.inputSource.handedness === 'left' && e.inputSource !== panelUser) place.carrying = !place.carrying;
     });
     vrBtn.textContent = 'Exit AR';
     s.addEventListener('end', () => {
@@ -152,7 +154,7 @@ function onXRFrame(tMs, xrFrame) {
   headPose = pose.transform;
   if (place.carrying) carry(xrFrame, pose);
   readControllers(s, st.dtr);
-  updatePanel(xrFrame, s, xrSpace, selecting);
+  panelUser = updatePanel(xrFrame, s, xrSpace, selecting);
   updatePlacement();
   update(st);   // once per frame, not once per eye
   runShadowPass(st);

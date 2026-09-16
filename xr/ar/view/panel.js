@@ -1,6 +1,6 @@
 // The control panel inside AR: every slider and toggle of the page's own panel,
-// drawn on a floating board, worked with the right controller's ray and trigger
-// (or a right-hand pinch). It drives the page's inputs directly, so the page's
+// drawn on a floating board, worked by touching it with a fingertip, or pointing
+// with a controller ray + trigger or a hand ray + pinch. It drives the page's inputs directly, so the page's
 // panel and this one are always the same state.
 //
 // It appears in front of you on entering AR. Left X shows or hides it, left Y
@@ -129,53 +129,92 @@ function redraw() {
 }
 
 // ---- pointing -----------------------------------------------------------------
-// Once per frame. Returns true while the right hand is using the panel, so the
-// caller can keep that hand's other bindings quiet.
-export function updatePanel(xrFrame, session, space, selecting) {
-  hover = null; ray = null;
-  let src = null;
-  for (const s of session.inputSources) if (s.handedness === 'right') src = s;
-  if (!panel.visible || !src) { grabbed = -1; pressedBefore = false; redraw(); return false; }
-  const pose = xrFrame.getPose(src.targetRaySpace, space);
-  if (!pose) { redraw(); return false; }
-  const m = pose.transform.matrix;
-  const o = [m[12], m[13], m[14]], d = [-m[8], -m[9], -m[10]];
-  const pressed = src.gamepad ? !!(src.gamepad.buttons[0] && src.gamepad.buttons[0].pressed) : selecting.has(src);
+// Every hand or controller can use the board, in two ways:
+//  - touch: with tracked hands, the index fingertip pokes the board directly
+//    (pressed once it reaches the surface);
+//  - point: a ray from any input source, pressed by the trigger or a pinch
+//    (a hand's gamepad reports no buttons on some browsers, so select events
+//    count as a press too).
+// Whichever source is closest to the board drives it; a source that grabbed a
+// slider keeps it until it lets go. Returns the input source using the board,
+// or null, so the caller can keep that source's other bindings quiet.
+const TOUCH_HOVER = 0.08, TOUCH_PRESS = 0.012;   // metres in front of the board
+let active = null;                               // the source that owns the grab
 
-  // the ray against the panel's plane
-  const denom = dot(d, panel.n);
-  let hitDist = 1.2;
-  if (Math.abs(denom) > 1e-4) {
-    const t = dot(sub(panel.c, o), panel.n) / denom;
-    if (t > 0 && t < 3) {
-      const p = [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t];
-      const q = sub(p, panel.c);
-      const x = (dot(q, panel.r) / W_M + 0.5) * CW, y = (0.5 - dot(q, panel.u) / H_M) * CH;
-      if (x >= 0 && x <= CW && y >= 0 && y <= CH || grabbed >= 0) {
-        const row = Math.floor((y - HEAD) / ROW_H);
-        hover = { row: row >= 0 && row < ROWS.length ? row : -1, x, y };
-        hitDist = t;
-      }
+function boardPoint(p) {
+  const q = sub(p, panel.c);
+  return [(dot(q, panel.r) / W_M + 0.5) * CW, (0.5 - dot(q, panel.u) / H_M) * CH, dot(q, panel.n)];
+}
+const onBoard = (x, y) => x >= 0 && x <= CW && y >= 0 && y <= CH;
+
+function probe(xrFrame, src, space, selecting) {
+  const clickPressed = !!(src.gamepad && src.gamepad.buttons[0] && src.gamepad.buttons[0].pressed)
+                    || selecting.has(src);
+  // touch with the index fingertip
+  if (src.hand && xrFrame.getJointPose) {
+    const joint = src.hand.get('index-finger-tip');
+    const jp = joint && xrFrame.getJointPose(joint, space);
+    if (jp) {
+      const tip = [jp.transform.position.x, jp.transform.position.y, jp.transform.position.z];
+      const [x, y, dist] = boardPoint(tip);
+      if ((onBoard(x, y) || active === src) && dist < TOUCH_HOVER && dist > -0.08)
+        return { src, x, y, pressed: dist < TOUCH_PRESS, near: dist, ray: null };
     }
   }
-  ray = { a: o, b: [o[0] + d[0] * hitDist, o[1] + d[1] * hitDist, o[2] + d[2] * hitDist] };
+  // point with the target ray
+  const pose = xrFrame.getPose(src.targetRaySpace, space);
+  if (!pose) return null;
+  const m = pose.transform.matrix;
+  const o = [m[12], m[13], m[14]], d = [-m[8], -m[9], -m[10]];
+  const denom = dot(d, panel.n);
+  if (Math.abs(denom) < 1e-4) return null;
+  const t = dot(sub(panel.c, o), panel.n) / denom;
+  if (!(t > 0 && t < 3)) return null;
+  const hit = [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t];
+  const [x, y] = boardPoint(hit);
+  if (!onBoard(x, y) && active !== src) return null;
+  return { src, x, y, pressed: clickPressed, near: t, ray: { a: o, b: hit } };
+}
+
+export function updatePanel(xrFrame, session, space, selecting) {
+  hover = null; ray = null;
+  if (!panel.visible) { grabbed = -1; active = null; pressedBefore = false; redraw(); return null; }
+
+  let use = null;
+  for (const src of session.inputSources) {
+    const p = probe(xrFrame, src, space, selecting);
+    if (!p) continue;
+    if (p.src === active) { use = p; break; }          // the grabbing source keeps the board
+    if (!use || p.near < use.near) use = p;
+  }
+  if (!use) {
+    if (active) { grabbed = -1; active = null; pressedBefore = false; }
+    redraw();
+    return null;
+  }
+  if (use.src !== active) pressedBefore = use.pressed;  // a press already held does not click
+  active = use.src;
+  const row = Math.floor((use.y - HEAD) / ROW_H);
+  hover = { row: row >= 0 && row < ROWS.length ? row : -1, x: use.x, y: use.y };
+  ray = use.ray;
 
   // press on a row: toggles flip, sliders grab; while held a grabbed slider follows
-  if (pressed && !pressedBefore && hover && hover.row >= 0) {
+  if (use.pressed && !pressedBefore && hover.row >= 0) {
     const el = ROWS[hover.row].el;
     if (!el) onExit();
     else if (el.type === 'checkbox') el.checked = !el.checked;
     else grabbed = hover.row;
     if (el && el.id === 'sep') document.getElementById('auto').checked = false;
   }
-  if (!pressed) grabbed = -1;
-  if (grabbed >= 0 && hover) {
+  if (!use.pressed) grabbed = -1;
+  if (grabbed >= 0) {
     const v = Math.min(1, Math.max(0, (hover.x - TRACK_X0) / (TRACK_X1 - TRACK_X0)));
     ROWS[grabbed].el.value = String(v);
   }
-  pressedBefore = pressed;
+  pressedBefore = use.pressed;
+  if (!use.pressed && !onBoard(use.x, use.y)) active = null;
   redraw();
-  return !!hover || grabbed >= 0;
+  return use.src;
 }
 
 // ---- drawing into an eye --------------------------------------------------------

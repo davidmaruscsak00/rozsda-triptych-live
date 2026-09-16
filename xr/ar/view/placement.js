@@ -15,7 +15,9 @@ export const place = {
   height: parseFloat(qp.get('scale') || '3.2'),   // triptych height, m
   carrying: false, placed: false,
 };
-export const BACK_M = parseFloat(qp.get('back') || '6.0');     // first drop, metres ahead
+// the wings reach about 1.4 m toward you at this size, so their tips land
+// about 1.6 m away
+export const BACK_M = parseFloat(qp.get('back') || '3.0');     // first drop, metres ahead
 export let worldFromPainting = null, paintingFromWorld = null;
 export function updatePlacement() {
   const MPP = place.height / IMG_H;                        // metres per pixel
