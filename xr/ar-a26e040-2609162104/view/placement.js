@@ -16,8 +16,8 @@ export const place = {
   carrying: false, placed: false,
 };
 // the wings reach about 1.4 m toward you at this size, so their tips land
-// about 1.6 m away
-export const BACK_M = parseFloat(qp.get('back') || '3.0');     // first drop, metres ahead
+// about 0.9 m away; the panel's Distance buttons move it from there
+export const BACK_M = parseFloat(qp.get('back') || '2.3');     // first drop, metres ahead
 export let worldFromPainting = null, paintingFromWorld = null;
 export function updatePlacement() {
   const MPP = place.height / IMG_H;                        // metres per pixel

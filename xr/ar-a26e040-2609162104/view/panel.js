@@ -14,12 +14,19 @@ const ROWS = [
   ['Gravity', 'gravity'], ['Light', 'light'], ['Rhythm', 'rhythm'],
   ['Pieces', 'pieces'], ['Turbulence', 'drift'], ['Auto pulse', 'auto'],
 ].map(([label, id]) => ({ label, el: document.getElementById(id) }));
-ROWS.push({ label: 'Session', el: null });
-let onExit = () => {};
+ROWS.push({ label: 'Distance', action: 'distance' });
+ROWS.push({ label: 'Session', action: 'exit' });
+let onExit = () => {}, onDistance = () => {};
 export function setPanelExit(fn) { onExit = fn; }
+// fn(metres): negative brings the installation toward you
+export function setPanelDistance(fn) { onDistance = fn; }
+// which build is running, so a stale cache is visible at a glance
+const BUILD = window.BUILD || 'local';
+// what the browser reports for each input, refreshed a few times a second
+let inputsText = '', inputsAt = 0;
 
 // canvas layout, px
-const CW = 512, CH = 704, HEAD = 64, ROW_H = 56, TRACK_X0 = 196, TRACK_X1 = 470;
+const CW = 512, CH = 800, HEAD = 64, ROW_H = 56, TRACK_X0 = 196, TRACK_X1 = 470;
 const W_M = 0.34, H_M = W_M * CH / CW;          // panel size, metres
 
 const canvas = document.createElement('canvas');
@@ -73,7 +80,7 @@ export function togglePanel() { panel.visible = !panel.visible; }
 
 // ---- drawing the board --------------------------------------------------------
 function redraw() {
-  const sig = ROWS.map(r => !r.el ? '' : r.el.type === 'checkbox' ? +r.el.checked : (+r.el.value).toFixed(3)).join()
+  const sig = inputsText + ROWS.map(r => !r.el ? '' : r.el.type === 'checkbox' ? +r.el.checked : (+r.el.value).toFixed(3)).join()
             + '|' + (hover ? hover.row : -1) + '|' + grabbed;
   if (sig === lastDrawn) return;
   lastDrawn = sig;
@@ -86,7 +93,7 @@ function redraw() {
   ctx.fillText('Rozsda', 28, 44);
   ctx.font = '18px "Segoe UI", system-ui, sans-serif';
   ctx.globalAlpha = 0.5;
-  ctx.fillText('X hide · Y call back', 300, 44);
+  ctx.fillText('build ' + BUILD, 300, 44);
   ctx.globalAlpha = 1;
   ROWS.forEach((row, i) => {
     const y = HEAD + i * ROW_H, mid = y + ROW_H / 2;
@@ -97,11 +104,19 @@ function redraw() {
     ctx.fillStyle = '#d8d2c4';
     ctx.font = '24px "Segoe UI", system-ui, sans-serif';
     ctx.fillText(row.label, 28, mid + 8);
-    if (!row.el) {                                          // the exit button
+    if (row.action === 'exit') {
       ctx.fillStyle = 'rgba(200, 80, 60, 0.85)';
       ctx.beginPath(); ctx.roundRect(TRACK_X0, mid - 18, TRACK_X1 - TRACK_X0, 36, 10); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.font = '600 22px "Segoe UI", system-ui, sans-serif';
       ctx.fillText('Leave AR', TRACK_X0 + 90, mid + 8);
+    } else if (row.action === 'distance') {                  // two buttons: closer | farther
+      const half = (TRACK_X1 - TRACK_X0) / 2;
+      ctx.fillStyle = 'rgba(217, 164, 65, 0.85)';
+      ctx.beginPath(); ctx.roundRect(TRACK_X0, mid - 18, half - 6, 36, 10); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(TRACK_X0 + half + 6, mid - 18, half - 6, 36, 10); ctx.fill();
+      ctx.fillStyle = '#1b1a18'; ctx.font = '600 20px "Segoe UI", system-ui, sans-serif';
+      ctx.fillText('closer', TRACK_X0 + 34, mid + 7);
+      ctx.fillText('farther', TRACK_X0 + half + 36, mid + 7);
     } else if (row.el.type === 'checkbox') {
       ctx.strokeStyle = '#d9a441'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.roundRect(TRACK_X0, mid - 15, 30, 30, 7); ctx.stroke();
@@ -121,6 +136,9 @@ function redraw() {
       ctx.globalAlpha = 1;
     }
   });
+  ctx.globalAlpha = 0.55; ctx.fillStyle = '#d8d2c4'; ctx.font = '15px "Segoe UI", system-ui, sans-serif';
+  ctx.fillText(inputsText || 'no inputs reported', 28, CH - 22);
+  ctx.globalAlpha = 1;
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
@@ -178,6 +196,7 @@ function probe(xrFrame, src, space, selecting) {
 
 export function updatePanel(xrFrame, session, space, selecting) {
   hover = null; ray = null;
+  describeInputs(xrFrame, session, space, selecting);
   if (!panel.visible) { grabbed = -1; active = null; pressedBefore = false; redraw(); return null; }
 
   let use = null;
@@ -201,7 +220,8 @@ export function updatePanel(xrFrame, session, space, selecting) {
   // press on a row: toggles flip, sliders grab; while held a grabbed slider follows
   if (use.pressed && !pressedBefore && hover.row >= 0) {
     const el = ROWS[hover.row].el;
-    if (!el) onExit();
+    if (ROWS[hover.row].action === 'exit') onExit();
+    else if (ROWS[hover.row].action === 'distance') onDistance(hover.x < (TRACK_X0 + TRACK_X1) / 2 ? -0.5 : 0.5);
     else if (el.type === 'checkbox') el.checked = !el.checked;
     else grabbed = hover.row;
     if (el && el.id === 'sep') document.getElementById('auto').checked = false;
@@ -215,6 +235,30 @@ export function updatePanel(xrFrame, session, space, selecting) {
   if (!use.pressed && !onBoard(use.x, use.y)) active = null;
   redraw();
   return use.src;
+}
+
+// e.g. "R hand tip 6cm pinch · L controller": handedness, kind, fingertip
+// distance to the board (negative = through it), and whether it is pressing
+function describeInputs(xrFrame, session, space, selecting) {
+  const now = performance.now();
+  if (now - inputsAt < 250) return;
+  inputsAt = now;
+  const parts = [];
+  for (const src of session.inputSources) {
+    let t = (src.handedness || '?')[0].toUpperCase() + (src.hand ? ' hand' : ' ctrl');
+    if (src.hand && xrFrame.getJointPose) {
+      const joint = src.hand.get('index-finger-tip');
+      const jp = joint && xrFrame.getJointPose(joint, space);
+      if (jp) {
+        const p = jp.transform.position;
+        t += ' tip ' + Math.round(boardPoint([p.x, p.y, p.z])[2] * 100) + 'cm';
+      } else t += ' no joints';
+    }
+    const btn = !!(src.gamepad && src.gamepad.buttons[0] && src.gamepad.buttons[0].pressed);
+    if (btn || selecting.has(src)) t += ' press';
+    parts.push(t);
+  }
+  inputsText = parts.join(' · ');
 }
 
 // ---- drawing into an eye --------------------------------------------------------

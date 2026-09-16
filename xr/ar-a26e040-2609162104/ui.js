@@ -76,7 +76,7 @@ export function tick(inHeadset) {
     const line = (1000 / Math.max(0.1, ftEma)).toFixed(0) + ' fps · ' + ftEma.toFixed(1) + ' ms'
       + (extTimer ? ' · sim ' + gpuMs.field.toFixed(2) + ' · shadow ' + gpuMs.shadow.toFixed(2) + ' · particles ' + gpuMs.draw.toFixed(2) + ' ms' : '')
       + (SHOW_CHIPS ? ' · ' + N_PARTICLES.toLocaleString() + ' chips' : '');
-    if (statsEl) statsEl.textContent = line;
+    if (statsEl) statsEl.textContent = line + ' · build ' + (window.BUILD || 'local');
     // inside a headset the DOM is not visible, so mirror it somewhere a
     // chrome://inspect session over adb can read while the piece is running
     if (inHeadset) console.log('[ar] ' + line);

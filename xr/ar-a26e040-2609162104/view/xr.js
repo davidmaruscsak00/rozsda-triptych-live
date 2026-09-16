@@ -7,7 +7,7 @@ import { paintReady } from '../scene/paint.js';
 import { update, runShadowPass, drawScene } from '../scene/render.js';
 import { place, BACK_M, updatePlacement, faceViewer,
          worldFromPainting, paintingFromWorld } from './placement.js';
-import { summonPanel, togglePanel, updatePanel, drawPanel, setPanelExit } from './panel.js';
+import { summonPanel, togglePanel, updatePanel, drawPanel, setPanelExit, setPanelDistance } from './panel.js';
 
 // ---- WebXR session ------------------------------------------------------
 // No locomotion: in a room you walk around it on your own feet.
@@ -16,6 +16,15 @@ const selecting = new Set();              // input sources mid-select (hand pinc
 let headPose = null;
 let panelUser = null;                      // the input source using the panel this frame
 setPanelExit(() => { if (xrSession) xrSession.end(); });
+setPanelDistance(metres => {
+  if (!headPose) return;
+  const hp = headPose.position;
+  const dx = place.x - hp.x, dz = place.z - hp.z, d = Math.hypot(dx, dz) || 1;
+  const nd = Math.max(0.5, d + metres);
+  place.x = hp.x + dx / d * nd;
+  place.z = hp.z + dz / d * nd;
+  faceViewer(hp);
+});
 function headFwd(q) {                       // head forward, flattened to the floor
   const fx = -(2 * (q.x * q.z + q.w * q.y));
   const fz = -(1 - 2 * (q.x * q.x + q.y * q.y));
