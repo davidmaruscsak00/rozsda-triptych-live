@@ -2,15 +2,18 @@
 // and the per-frame XR loop that draws both eyes.
 import { gl } from '../gl/context.js';
 import { mul4, xf4 } from '../gl/mat4.js';
-import { tick, sepEl, piecesEl, driftEl, autoEl } from '../ui.js';
+import { tick, sepEl, piecesEl, autoEl } from '../ui.js';
 import { paintReady } from '../scene/paint.js';
 import { update, runShadowPass, drawScene } from '../scene/render.js';
 import { place, BACK_M, updatePlacement, faceViewer,
          worldFromPainting, paintingFromWorld } from './placement.js';
+import { summonPanel, togglePanel, updatePanel, drawPanel } from './panel.js';
 
 // ---- WebXR session ------------------------------------------------------
 // No locomotion: in a room you walk around it on your own feet.
 let xrSession = null, xrSpace = null, xrFbo = null;
+const selecting = new Set();              // input sources mid-select (hand pinches)
+let headPose = null;
 function headFwd(q) {                       // head forward, flattened to the floor
   const fx = -(2 * (q.x * q.z + q.w * q.y));
   const fz = -(1 - 2 * (q.x * q.x + q.y * q.y));
@@ -63,10 +66,12 @@ function readControllers(session, dtr) {
       }
       if (edge('r4', bt[4] && bt[4].pressed)) piecesEl.checked = !piecesEl.checked;
       if (edge('r5', bt[5] && bt[5].pressed)) autoEl.checked = !autoEl.checked;
-      if (edge('r0', bt[0] && bt[0].pressed)) driftEl.checked = !driftEl.checked;
     } else if (hand === 'left') {
+      if (edge('l4', bt[4] && bt[4].pressed)) togglePanel();
+      if (edge('l5', bt[5] && bt[5].pressed) && headPose)
+        summonPanel(headPose.position, headFwd(headPose.orientation));
       place.turn -= dead(sx) * dtr * 1.2;
-      place.height = Math.min(8, Math.max(0.3, place.height * Math.exp(-dead(sy) * dtr * 0.8)));
+      place.height = Math.min(12, Math.max(0.3, place.height * Math.exp(-dead(sy) * dtr * 0.8)));
     }
   }
 }
@@ -102,6 +107,9 @@ async function enterAR() {
     xrSpace = await s.requestReferenceSpace('local-floor')
       .catch(() => s.requestReferenceSpace('local'));
     place.placed = false; place.carrying = false;
+    selecting.clear();
+    s.addEventListener('selectstart', e => selecting.add(e.inputSource));
+    s.addEventListener('selectend', e => selecting.delete(e.inputSource));
     s.addEventListener('select', (e) => {
       if (e.inputSource.handedness === 'left') place.carrying = !place.carrying;
     });
@@ -134,9 +142,12 @@ function onXRFrame(tMs, xrFrame) {
     place.z = hp.z + fz * BACK_M;
     faceViewer(hp);
     place.placed = true;
+    summonPanel(hp, [fx, fz]);
   }
+  headPose = pose.transform;
   if (place.carrying) carry(xrFrame, pose);
   readControllers(s, st.dtr);
+  updatePanel(xrFrame, s, xrSpace, selecting);
   updatePlacement();
   update(st);   // once per frame, not once per eye
   runShadowPass(st);
@@ -147,10 +158,11 @@ function onXRFrame(tMs, xrFrame) {
   for (const view of pose.views) {
     const vp = layer.getViewport(view);
     gl.viewport(vp.x, vp.y, vp.width, vp.height);
-    const viewProj = mul4(mul4(view.projectionMatrix, view.transform.inverse.matrix),
-                          worldFromPainting);
+    const eyeViewProj = mul4(view.projectionMatrix, view.transform.inverse.matrix);
+    const viewProj = mul4(eyeViewProj, worldFromPainting);
     const p = view.transform.position;
     const cp = xf4(paintingFromWorld, p.x, p.y, p.z);
     drawScene(viewProj, cp, st, vp.height);
+    drawPanel(eyeViewProj);
   }
 }

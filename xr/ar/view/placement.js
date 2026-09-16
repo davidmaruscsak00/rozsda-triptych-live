@@ -12,10 +12,10 @@ export const place = {
   x: 0, z: 0,
   face: 0,                                  // yaw that turns the front to the viewer
   turn: 0,                                  // extra yaw from the left stick
-  height: parseFloat(qp.get('scale') || '1.6'),   // triptych height, m
+  height: parseFloat(qp.get('scale') || '3.2'),   // triptych height, m
   carrying: false, placed: false,
 };
-export const BACK_M = parseFloat(qp.get('back') || '3.0');     // first drop, metres ahead
+export const BACK_M = parseFloat(qp.get('back') || '6.0');     // first drop, metres ahead
 export let worldFromPainting = null, paintingFromWorld = null;
 export function updatePlacement() {
   const MPP = place.height / IMG_H;                        // metres per pixel
