@@ -7,13 +7,14 @@ import { paintReady } from '../scene/paint.js';
 import { update, runShadowPass, drawScene } from '../scene/render.js';
 import { place, BACK_M, updatePlacement, faceViewer,
          worldFromPainting, paintingFromWorld } from './placement.js';
-import { summonPanel, togglePanel, updatePanel, drawPanel } from './panel.js';
+import { summonPanel, togglePanel, updatePanel, drawPanel, setPanelExit } from './panel.js';
 
 // ---- WebXR session ------------------------------------------------------
 // No locomotion: in a room you walk around it on your own feet.
 let xrSession = null, xrSpace = null, xrFbo = null;
 const selecting = new Set();              // input sources mid-select (hand pinches)
 let headPose = null;
+setPanelExit(() => { if (xrSession) xrSession.end(); });
 function headFwd(q) {                       // head forward, flattened to the floor
   const fx = -(2 * (q.x * q.z + q.w * q.y));
   const fz = -(1 - 2 * (q.x * q.x + q.y * q.y));
@@ -49,6 +50,7 @@ function carry(xrFrame, pose) {
 // the room. Auto pulse is on by default so it performs itself if nobody
 // touches a controller.
 function readControllers(session, dtr) {
+  let sticksDown = 0;
   for (const src of session.inputSources) {
     const gp = src.gamepad;
     if (!gp) continue;
@@ -57,6 +59,7 @@ function readControllers(session, dtr) {
     const sx = ax.length > 2 ? ax[2] : (ax[0] || 0);
     const sy = ax.length > 3 ? ax[3] : (ax[1] || 0);
     const dead = (v) => (Math.abs(v) < 0.15 ? 0 : v);
+    if (bt[3] && bt[3].pressed) sticksDown++;
     if (hand === 'right') {
       const d = dead(sy);
       if (d) {
@@ -74,6 +77,8 @@ function readControllers(session, dtr) {
       place.height = Math.min(12, Math.max(0.3, place.height * Math.exp(-dead(sy) * dtr * 0.8)));
     }
   }
+  // both thumbsticks clicked together leave AR, whether or not the panel is up
+  if (edge('bothSticks', sticksDown >= 2)) session.end();
 }
 const vrBtn = document.getElementById('vr');
 let onEnd = () => {};

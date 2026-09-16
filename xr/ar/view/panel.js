@@ -4,7 +4,7 @@
 // panel and this one are always the same state.
 //
 // It appears in front of you on entering AR. Left X shows or hides it, left Y
-// calls it back in front of you.
+// calls it back in front of you. Its last row leaves AR.
 import { gl, uni } from '../gl/context.js';
 import { program } from '../gl/program.js';
 import { PANEL_VS, PANEL_FS } from '../shaders/panel.glsl.js';
@@ -14,9 +14,12 @@ const ROWS = [
   ['Gravity', 'gravity'], ['Light', 'light'], ['Rhythm', 'rhythm'],
   ['Pieces', 'pieces'], ['Turbulence', 'drift'], ['Auto pulse', 'auto'],
 ].map(([label, id]) => ({ label, el: document.getElementById(id) }));
+ROWS.push({ label: 'Session', el: null });
+let onExit = () => {};
+export function setPanelExit(fn) { onExit = fn; }
 
 // canvas layout, px
-const CW = 512, CH = 640, HEAD = 64, ROW_H = 56, TRACK_X0 = 196, TRACK_X1 = 470;
+const CW = 512, CH = 704, HEAD = 64, ROW_H = 56, TRACK_X0 = 196, TRACK_X1 = 470;
 const W_M = 0.34, H_M = W_M * CH / CW;          // panel size, metres
 
 const canvas = document.createElement('canvas');
@@ -70,7 +73,7 @@ export function togglePanel() { panel.visible = !panel.visible; }
 
 // ---- drawing the board --------------------------------------------------------
 function redraw() {
-  const sig = ROWS.map(r => r.el.type === 'checkbox' ? +r.el.checked : (+r.el.value).toFixed(3)).join()
+  const sig = ROWS.map(r => !r.el ? '' : r.el.type === 'checkbox' ? +r.el.checked : (+r.el.value).toFixed(3)).join()
             + '|' + (hover ? hover.row : -1) + '|' + grabbed;
   if (sig === lastDrawn) return;
   lastDrawn = sig;
@@ -94,7 +97,12 @@ function redraw() {
     ctx.fillStyle = '#d8d2c4';
     ctx.font = '24px "Segoe UI", system-ui, sans-serif';
     ctx.fillText(row.label, 28, mid + 8);
-    if (row.el.type === 'checkbox') {
+    if (!row.el) {                                          // the exit button
+      ctx.fillStyle = 'rgba(200, 80, 60, 0.85)';
+      ctx.beginPath(); ctx.roundRect(TRACK_X0, mid - 18, TRACK_X1 - TRACK_X0, 36, 10); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = '600 22px "Segoe UI", system-ui, sans-serif';
+      ctx.fillText('Leave AR', TRACK_X0 + 90, mid + 8);
+    } else if (row.el.type === 'checkbox') {
       ctx.strokeStyle = '#d9a441'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.roundRect(TRACK_X0, mid - 15, 30, 30, 7); ctx.stroke();
       if (row.el.checked) {
@@ -155,9 +163,10 @@ export function updatePanel(xrFrame, session, space, selecting) {
   // press on a row: toggles flip, sliders grab; while held a grabbed slider follows
   if (pressed && !pressedBefore && hover && hover.row >= 0) {
     const el = ROWS[hover.row].el;
-    if (el.type === 'checkbox') el.checked = !el.checked;
+    if (!el) onExit();
+    else if (el.type === 'checkbox') el.checked = !el.checked;
     else grabbed = hover.row;
-    if (ROWS[hover.row].el.id === 'sep') document.getElementById('auto').checked = false;
+    if (el && el.id === 'sep') document.getElementById('auto').checked = false;
   }
   if (!pressed) grabbed = -1;
   if (grabbed >= 0 && hover) {
