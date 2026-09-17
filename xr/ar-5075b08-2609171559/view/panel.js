@@ -3,8 +3,9 @@
 // with a controller ray + trigger or a hand ray + pinch. It drives the page's inputs directly, so the page's
 // panel and this one are always the same state.
 //
-// It appears in front of you on entering AR. Left X shows or hides it, left Y
-// calls it back in front of you. Its last rows place the installation in the
+// It appears in front of you on entering AR. Its hide button or left X hides it;
+// left Y, or pinching with both hands for a second and a half, calls it back in
+// front of you. Its last rows place the installation in the
 // room (Move, Turn, Size, Distance) and leave AR.
 import { gl, uni } from '../gl/context.js';
 import { program } from '../gl/program.js';
@@ -34,6 +35,7 @@ const BUILD = window.BUILD || 'local';
 let inputsText = '', inputsAt = 0;
 
 // canvas layout, px
+const HIDE_X0 = 392;                            // the header's hide button runs from here to the right edge
 const CW = 512, CH = 64 + 56 * ROWS.length + 64, HEAD = 64, ROW_H = 56, TRACK_X0 = 196, TRACK_X1 = 470;
 const W_M = 0.34, H_M = W_M * CH / CW;          // panel size, metres
 
@@ -89,7 +91,7 @@ export function togglePanel() { panel.visible = !panel.visible; }
 // ---- drawing the board --------------------------------------------------------
 function redraw() {
   const ps = placeState();
-  const sig = inputsText + +ps.carrying + +ps.locked + ps.anchor + ROWS.map(r => !r.el ? '' : r.el.type === 'checkbox' ? +r.el.checked : (+r.el.value).toFixed(3)).join()
+  const sig = inputsText + +(hover && hover.hide) + +ps.carrying + +ps.locked + ps.anchor + ROWS.map(r => !r.el ? '' : r.el.type === 'checkbox' ? +r.el.checked : (+r.el.value).toFixed(3)).join()
             + '|' + (hover ? hover.row : -1) + '|' + grabbed;
   if (sig === lastDrawn) return;
   lastDrawn = sig;
@@ -102,8 +104,15 @@ function redraw() {
   ctx.fillText('Rozsda', 28, 44);
   ctx.font = '18px "Segoe UI", system-ui, sans-serif';
   ctx.globalAlpha = 0.5;
-  ctx.fillText('build ' + BUILD, 300, 44);
+  ctx.fillText('build ' + BUILD, 130, 44);
   ctx.globalAlpha = 1;
+  // hide button, top right
+  ctx.fillStyle = hover && hover.hide ? 'rgba(217, 164, 65, 1)' : 'rgba(217, 164, 65, 0.85)';
+  ctx.beginPath(); ctx.roundRect(HIDE_X0, 14, CW - 20 - HIDE_X0, 36, 10); ctx.fill();
+  ctx.fillStyle = '#1b1a18'; ctx.font = '600 20px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('hide', (HIDE_X0 + CW - 20) / 2, 39);
+  ctx.textAlign = 'left';
   ROWS.forEach((row, i) => {
     const y = HEAD + i * ROW_H, mid = y + ROW_H / 2;
     if (hover && hover.row === i || grabbed === i) {
@@ -244,8 +253,13 @@ export function updatePanel(xrFrame, session, space, selecting) {
   if (use.src !== active) pressedBefore = use.pressed;  // a press already held does not click
   active = use.src;
   const row = Math.floor((use.y - HEAD) / ROW_H);
-  hover = { row: row >= 0 && row < ROWS.length ? row : -1, x: use.x, y: use.y };
+  hover = { row: row >= 0 && row < ROWS.length ? row : -1, x: use.x, y: use.y,
+            hide: use.y < HEAD && use.x > HIDE_X0 };
   ray = use.ray;
+  if (hover.hide && use.pressed && !pressedBefore) {
+    panel.visible = false; grabbed = -1; active = null; pressedBefore = false; hover = null; ray = null;
+    return use.src;                                     // this press belongs to the board
+  }
 
   // press on a row: toggles flip, sliders grab; while held a grabbed slider follows
   if (use.pressed && !pressedBefore && hover.row >= 0) {

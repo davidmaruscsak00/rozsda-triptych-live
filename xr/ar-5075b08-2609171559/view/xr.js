@@ -17,6 +17,21 @@ const selecting = new Set();              // input sources mid-select (hand pinc
 let headPose = null;
 let panelUser = null;                      // the input source using the panel this frame
 let panelPlaced = false;                   // the board is put in front of you once per session
+const boardPress = new Set();              // sources whose current select began on the board
+let bothPinchSince = 0;                    // when both hands started pinching together
+const SUMMON_HOLD_MS = 1500;
+// Both hands pinching for SUMMON_HOLD_MS brings the board back in front of you:
+// the hand-tracking way to undo its hide button, and too deliberate for a visitor.
+function twoHandSummon(session) {
+  const pinching = [...session.inputSources].filter(src => src.hand && selecting.has(src));
+  if (pinching.length < 2) { bothPinchSince = 0; return; }
+  const now = performance.now();
+  if (!bothPinchSince) bothPinchSince = now;
+  if (now - bothPinchSince < SUMMON_HOLD_MS) return;
+  bothPinchSince = Infinity;                // once per hold
+  pinching.forEach(src => boardPress.add(src));
+  if (headPose) summonPanel(headPose.position, headFwd(headPose.orientation));
+}
 setPanelExit(() => { if (xrSession) xrSession.end(); });
 // The board's placement rows. Move picks the installation up on the ray of the
 // hand or controller that pressed it; pressing again, or a trigger or pinch
@@ -147,15 +162,20 @@ async function enterAR() {
     xrSpace = await s.requestReferenceSpace('local-floor')
       .catch(() => s.requestReferenceSpace('local'));
     place.placed = false; place.carrying = false; place.carrier = null; place.locked = false;
-    panelPlaced = false;
+    panelPlaced = false; boardPress.clear(); bothPinchSince = 0;
     startAnchors(s);                        // locks it again when a saved place exists
     selecting.clear();
-    s.addEventListener('selectstart', e => selecting.add(e.inputSource));
+    s.addEventListener('selectstart', e => {
+      selecting.add(e.inputSource);
+      if (e.inputSource === panelUser) boardPress.add(e.inputSource);
+    });
     s.addEventListener('selectend', e => selecting.delete(e.inputSource));
     s.addEventListener('select', (e) => {
-      // a pinch or trigger aimed at the panel belongs to the panel; off the
-      // panel any source puts a carried installation down, the left picks it up
-      if (e.inputSource === panelUser) return;
+      // a pinch or trigger that started on the panel belongs to the panel (even
+      // when it hid the panel), and so does the two-hand pinch that calls it
+      // back; off the panel any source puts a carried installation down, the
+      // left picks it up
+      if (boardPress.delete(e.inputSource) || e.inputSource === panelUser) return;
       if (place.carrying) { place.carrying = false; place.carrier = null; placementChanged(); }
       else if (e.inputSource.handedness === 'left' && !place.locked) place.carrying = true;
     });
@@ -197,6 +217,7 @@ function onXRFrame(tMs, xrFrame) {
   headPose = pose.transform;
   if (place.carrying) carry(xrFrame, pose);
   readControllers(s, st.dtr);
+  twoHandSummon(s);
   panelUser = updatePanel(xrFrame, s, xrSpace, selecting);
   updatePlacement();
   const shown = place.placed;               // nothing drawn while a saved place is being found
