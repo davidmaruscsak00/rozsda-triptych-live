@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rozsda — Machine Hallucination</title>
+<link rel="stylesheet" href="ar-cbf78bc-2609171601/style.css">
+</head>
+<body>
+<canvas id="gl"></canvas>
+<button id="menu-toggle" aria-controls="ui" aria-expanded="true" title="Menu (M)">≡</button>
+<div id="ui">
+  <label><span class="name">Separate</span><input id="sep" type="range" min="0" max="1" step="0.001" value="0.3"></label>
+  <label><span class="name">Crumble</span><input id="crumble" type="range" min="0" max="1" step="0.001" value="0.6"></label>
+  <label><span class="name">Swirl</span><input id="swirl" type="range" min="0" max="1" step="0.001" value="0.5"></label>
+  <label><span class="name">Form</span><input id="form" type="range" min="0" max="1" step="0.001" value="0"></label>
+  <label><span class="name">Gravity</span><input id="gravity" type="range" min="0" max="1" step="0.001" value="0"></label>
+  <label><span class="name">Light</span><input id="light" type="range" min="0" max="1" step="0.001" value="0.554"></label>
+  <label><span class="name">Rhythm</span><input id="rhythm" type="range" min="0" max="1" step="0.001" value="0.5"></label>
+  <label><span class="name">Pieces</span><input id="pieces" type="checkbox" checked></label>
+  <label><span class="name">Turbulence</span><input id="drift" type="checkbox" checked></label>
+  <label><span class="name">Auto play</span><input id="auto" type="checkbox"></label>
+  <label><span class="name">Camera</span><button id="camreset">Reset view</button></label>
+  <label><span class="name">Quality</span><select id="quality">
+    <option value="60000">Quest low · 60k</option>
+    <option value="150000">Quest · 150k</option>
+    <option value="400000">Quest high · 400k</option>
+    <option value="1000000">Desktop · 1M</option>
+    <option value="2400000">Desktop · 2.4M</option>
+  </select></label>
+  <label><span class="name">Headset</span><button id="vr" hidden>Enter AR</button></label>
+  <div id="stats"></div>
+  <div id="error" hidden></div>
+  <div id="hint">set sliders here, then Enter AR · desktop: drag orbit · right-drag pan · wheel zoom · WASDQE fly<br>in AR: panel in front of you, touch it with a fingertip or point + trigger / pinch · left X hide · Y call back<br>leave AR: Leave AR on the panel, both thumbsticks clicked, or the Meta button<br>left trigger / pinch pick up + put down · left stick turn + resize · right stick separate · A pieces · B auto</div>
+</div>
+
+<script src="../assets/painting-data.js?v=cbf78bc-2609171601"></script>
+<script src="../assets/meshes.js?v=cbf78bc-2609171601"></script>
+<!-- the asset scripts declare top-level consts, which modules cannot import -->
+<script>window.ASSETS = { IMG_W, IMG_H, PIECES, PAINTING_DATA_URI };</script>
+<!-- a headset has no console to read: show any failure in the panel -->
+<script>
+function showError(msg) {
+  const el = document.getElementById('error');
+  el.hidden = false;
+  el.textContent += (el.textContent ? '\n' : '') + msg;
+}
+addEventListener('error', e => showError(e.message || String(e.error)));
+addEventListener('unhandledrejection', e => showError(String(e.reason && e.reason.message || e.reason)));
+</script>
+<!-- browsers refuse ES modules from file://, which would leave a silent black page -->
+<script>
+if (location.protocol === 'file:') document.body.insertAdjacentHTML('afterbegin', '<div id="notice">' +
+  'This page is built from ES modules, which browsers will not load from a double-clicked file.<br>' +
+  'From the repo root run <b>node scripts/serve.js</b>, then open <b>http://localhost:8080/xr/ar.html</b></div>');
+</script>
+<script>window.BUILD = 'cbf78bc-2609171601';
+fetch('../build.json?t=' + Date.now(), { cache: 'no-store' })
+  .then(r => r.json())
+  .then(b => { if (b.build !== window.BUILD) location.replace('ar-' + b.build + '.html' + location.search + location.hash); })
+  .catch(() => {});
+</script>
+<script type="module" src="ar-cbf78bc-2609171601/main.js"></script>
+</body>
+</html>

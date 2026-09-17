@@ -1,5 +1,10 @@
 <!DOCTYPE html>
 <meta charset="utf-8">
 <title>Rozsda triptych</title>
-<script>location.replace('xr/ar.html' + location.search);</script>
-<a href="xr/ar.html">Rozsda triptych (AR)</a>
+<script>
+fetch('build.json?t=' + Date.now(), { cache: 'no-store' })
+  .then(r => r.json())
+  .then(b => location.replace('xr/ar-' + b.build + '.html' + location.search + location.hash))
+  .catch(() => { document.body.textContent = 'Could not load the build list, refresh to try again.'; });
+</script>
+<body></body>
