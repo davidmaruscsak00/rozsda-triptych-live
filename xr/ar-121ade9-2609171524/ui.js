@@ -1,6 +1,7 @@
 // The panel, and the per-frame clock it drives.
 import { qp, N_PARTICLES, SHOW_CHIPS, N_POINTS } from './config.js';
 import { extTimer, gpuMs } from './gl/timers.js';
+import { createAutoplay } from './autoplay.js';
 
 export const sepEl = document.getElementById('sep');
 // Quality reloads with a new particle count (the buffers are built at load),
@@ -29,6 +30,14 @@ if (qp.has('sep')) sepEl.value = qp.get('sep');
 for (const [k, el] of [['crumble', crumbleEl], ['swirl', swirlEl], ['rhythm', rhythmEl], ['gravity', gravityEl], ['light', lightEl], ['form', formEl]])
   if (qp.has(k)) el.value = qp.get(k);
 if (qp.get('pieces') === '0') piecesEl.checked = false;
+// Automatic playback runs unless ?auto=0 or a slider is moved by hand (here, or
+// on the board inside AR, which switches it off the same way).
+const playSliders = { sep: sepEl, crumble: crumbleEl, swirl: swirlEl, gravity: gravityEl,
+                      form: formEl, light: lightEl, rhythm: rhythmEl };
+const autoplay = createAutoplay(playSliders);
+autoEl.checked = qp.get('auto') !== '0' && ![...Object.keys(playSliders)].some(k => qp.has(k));
+for (const el of Object.values(playSliders))
+  el.addEventListener('input', () => { autoEl.checked = false; });
 // The menu folds away to a single button; M toggles it too. Remembered per
 // browser, and the piece works the same whether it is open or not.
 const menuEl = document.getElementById('ui');
@@ -64,8 +73,8 @@ let frameNo = 0;
 export function tick(inHeadset) {
   frameNo++;
   const t = FIXED_DT > 0 ? frameNo * FIXED_DT : (performance.now() - t0) / 1000;
-  let sep = parseFloat(sepEl.value);
-  if (autoEl.checked) sep *= 0.5 - 0.5 * Math.cos(t * 0.35);
+  autoplay(autoEl.checked, t);
+  const sep = parseFloat(sepEl.value);
   const drift = driftEl.checked ? 1 : 0;
   const rawMs = (t - lastT) * 1000;
   const dtr = Math.min(0.05, Math.max(0, t - lastT));

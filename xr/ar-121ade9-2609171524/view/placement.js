@@ -12,12 +12,13 @@ export const place = {
   x: 0, z: 0,
   face: 0,                                  // yaw that turns the front to the viewer
   turn: 0,                                  // extra yaw from the left stick
-  height: parseFloat(qp.get('scale') || '3.2'),   // triptych height, m
+  height: parseFloat(qp.get('scale') || '2.6'),   // triptych height, m
   carrying: false, placed: false,
+  carrier: null,                            // the input source whose ray moves it, or null for any
 };
-// the wings reach about 1.4 m toward you at this size, so their tips land
-// about 0.9 m away; the panel's Distance buttons move it from there
-export const BACK_M = parseFloat(qp.get('back') || '2.3');     // first drop, metres ahead
+// the wings reach about 1.15 m toward you at this size, so their tips land
+// about 0.85 m away; the board's Move, Turn, Size and Distance rows go from there
+export const BACK_M = parseFloat(qp.get('back') || '2.0');     // first drop, metres ahead
 export let worldFromPainting = null, paintingFromWorld = null;
 export function updatePlacement() {
   const MPP = place.height / IMG_H;                        // metres per pixel

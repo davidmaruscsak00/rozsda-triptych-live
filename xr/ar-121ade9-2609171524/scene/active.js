@@ -14,7 +14,8 @@
 import { PIECES, IMG_W, IMG_H } from '../config.js';
 import { RELIEF_RECT } from './relief.js';
 
-const GRACE = 20;                          // s; a returning grain lands within a few
+// s; at the speed limit a grain crosses the whole triptych (about 3,500 px) in 30
+const GRACE = 40;
 const MARGIN = 0.01;                       // on activation's inner term
 
 const NP = PIECES.length;

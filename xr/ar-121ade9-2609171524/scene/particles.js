@@ -14,7 +14,7 @@ import { bindLight } from './light.js';
 import { bindRelief } from './relief.js';
 import { N_KEYS, keyOrder, active, updateActive } from './active.js';
 import { bindCrumble } from './crumble.js';
-import { qp, PIECES, IMG_W, IMG_H, N_POINTS, SHADOW_FRAC, FLOOR_Y, FRAME_Z_FRONT, FRAME_Z_BACK, FW } from '../config.js';
+import { qp, PIECES, IMG_W, IMG_H, N_POINTS, SHADOW_FRAC, FLOOR_Y, FRAME_Z_BACK, EDGE_W, EDGE_Z0, EDGE_Z1 } from '../config.js';
 
 const simProg = programTF(SIM_VS, DEPTH_FS, ['o_s0', 'o_s1']);
 const drawProg = program(PARTICLES_VS, PARTICLES_FS);
@@ -114,6 +114,9 @@ const layers = [{ start: 0, end: nShadow }, { start: nShadow, end: count }].map(
 // few long runs and the eyes many short ones. ?cull=0 steps and draws every
 // particle, as before culling; ?simgap= and ?drawgap= are in particles.
 const CULL = qp.get('cull') !== '0';
+// no grain moves faster than this, in painting px/s (120 px is about 24 cm at the
+// default 2.6 m height); ?maxspeed=
+const MAX_SPEED = parseFloat(qp.get('maxspeed') || '120');
 const SIM_GAP = parseInt(qp.get('simgap') || String(Math.floor(count / 8)), 10);
 const DRAW_GAP = parseInt(qp.get('drawgap') || String(Math.floor(count / 2000)), 10);
 const runSet = (ls, gap) => ({ ls, gap, runs: new Int32Array(4 * N_KEYS), n: 0 });
@@ -175,14 +178,21 @@ export function particleCensus() {
   gl.getBufferSubData(gl.ARRAY_BUFFER, 0, s);
   gl.bindBuffer(gl.ARRAY_BUFFER, null);
   let flying = 0, shown = 0;
+  const speeds = [];
   for (let i = 0; i < count; i++) {
-    if (s[i * 8 + 3] > 0) flying++;
+    if (s[i * 8 + 3] > 0) {
+      flying++;
+      if (i % 16 === 0) speeds.push(Math.hypot(s[i * 8 + 4], s[i * 8 + 5], s[i * 8 + 6]));
+    }
     if (s[i * 8 + 3] > 0 || s[i * 8 + 7] <= -0.26) shown++;   // SURFACE_AT
   }
+  speeds.sort((a, b) => a - b);
+  const pct = q => speeds.length ? Math.round(speeds[Math.min(speeds.length - 1, Math.floor(q * speeds.length))]) : 0;
+  const speed = { p50: pct(0.5), p90: pct(0.9), p99: pct(0.99), max: pct(1) };
   let stepped = 0, drawn = 0;
   for (let r = 0; r < simRuns.n; r++) stepped += simRuns.runs[2 * r + 1];
   for (let r = 0; r < eyeRuns.n; r++) drawn += eyeRuns.runs[2 * r + 1];
-  return { flying, shown, stepped, drawn, simRuns: simRuns.n, eyeRuns: eyeRuns.n };
+  return { flying, shown, speed, stepped, drawn, simRuns: simRuns.n, eyeRuns: eyeRuns.n };
 }
 
 // one draw call per run
@@ -215,10 +225,11 @@ export function updateParticles(st) {
   gl.uniform1f(uni(simProg, 'u_crumble'), st.crumble);
   gl.uniform1f(uni(simProg, 'u_ctime'), st.ctime);
   gl.uniform1f(uni(simProg, 'u_swirl'), st.swirl);
-  gl.uniform1f(uni(simProg, 'u_frameFront'), FRAME_Z_FRONT);
-  gl.uniform1f(uni(simProg, 'u_frameBack'), FRAME_Z_BACK + 28);
-  gl.uniform1f(uni(simProg, 'u_frameW'), FW);
+  gl.uniform2f(uni(simProg, 'u_edgeZ'), EDGE_Z0, EDGE_Z1);
+  gl.uniform1f(uni(simProg, 'u_edgeW'), EDGE_W);
+  gl.uniform1f(uni(simProg, 'u_backZ'), FRAME_Z_BACK);
   gl.uniform1f(uni(simProg, 'u_gravity'), st.gravity);
+  gl.uniform1f(uni(simProg, 'u_maxSpeed'), MAX_SPEED);
   bindFluid(simProg);
   bindRelief(simProg, st.form);
   bindXform(simProg);

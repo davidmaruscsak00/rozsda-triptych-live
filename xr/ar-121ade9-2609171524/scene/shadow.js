@@ -6,7 +6,7 @@ import { program } from '../gl/program.js';
 import { gpuBegin, gpuEnd } from '../gl/timers.js';
 import { FLOOR_VS, FLOOR_FS } from '../shaders/floor.glsl.js';
 import { shadowTex, shadowFbo, lightVP, casterPts, useShadowAsTarget } from './light.js';
-import { IMG_W, IMG_H, FRAME_Z_FRONT, FRAME_Z_BACK, FW, FLOOR_Y,
+import { IMG_W, IMG_H, EDGE_W, EDGE_Z0, EDGE_Z1, FLOOR_Y,
          SHADOW_RES, SUN_ELEV } from '../config.js';
 
 const flProg = program(FLOOR_VS, FLOOR_FS);
@@ -14,7 +14,7 @@ const flProg = program(FLOOR_VS, FLOOR_FS);
 // The receiver: a floor quad covering the casters' footprint plus the
 // longest shadow they can throw and the contact falloff. It draws nothing
 // but black at the shadow's alpha.
-const CONTACT_PX = 140;
+const CONTACT_PX = 50;                          // a thin edge darkens only a narrow strip
 const flVao = gl.createVertexArray();
 {
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
@@ -22,7 +22,7 @@ const flVao = gl.createVertexArray();
     x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]);
     z0 = Math.min(z0, p[2]); z1 = Math.max(z1, p[2]);
   }
-  const reach = (FLOOR_Y + FW + 300) / Math.tan(SUN_ELEV) + 6 * CONTACT_PX;
+  const reach = (FLOOR_Y + EDGE_W + 300) / Math.tan(SUN_ELEV) + 6 * CONTACT_PX;
   const Y = FLOOR_Y;
   const quad = new Float32Array([x0 - reach, Y, z0 - reach,  x1 + reach, Y, z0 - reach,
                                  x1 + reach, Y, z1 + reach,  x0 - reach, Y, z1 + reach]);
@@ -65,8 +65,8 @@ export function drawFloor(viewProj) {
   gl.uniformMatrix4fv(uni(flProg, 'u_lightVP'), false, lightVP);
   gl.uniform1f(uni(flProg, 'u_texel'), 1 / SHADOW_RES);
   gl.uniform2f(uni(flProg, 'u_imgSize'), IMG_W, IMG_H);
-  gl.uniform2f(uni(flProg, 'u_frameZ'), FRAME_Z_FRONT, FRAME_Z_BACK + 28);
-  gl.uniform1f(uni(flProg, 'u_frameW'), FW);
+  gl.uniform2f(uni(flProg, 'u_frameZ'), EDGE_Z0, EDGE_Z1);
+  gl.uniform1f(uni(flProg, 'u_frameW'), EDGE_W);
   gl.uniform1f(uni(flProg, 'u_strength'), 0.62);
   gl.uniform1f(uni(flProg, 'u_contact'), CONTACT_PX);
   gl.uniform1f(uni(flProg, 'u_penumbra'), 0.04);

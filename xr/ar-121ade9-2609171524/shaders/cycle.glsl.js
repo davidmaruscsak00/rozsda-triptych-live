@@ -45,6 +45,9 @@ float crumbleGrain(vec2 px, float panel) {
 const CONSTS = `
 const float RELEASE_SPAN = 0.30;
 const float SURFACE_AT = 0.26;
+// a grain that rose again at the top of the waterfall counts its flight from
+// here, which tells the draw to fade it in (scene/particles.js)
+const float RESPAWN_AGE = 10000.0;
 `;
 
 // ?bake=0 evaluates the noise wherever it is asked for, as it was before the

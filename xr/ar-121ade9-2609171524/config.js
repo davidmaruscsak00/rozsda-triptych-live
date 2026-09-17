@@ -20,11 +20,15 @@ export const N_POINTS = Math.max(0, parseInt(qp.get('particles') || (ON_HEADSET 
 // brings it back.
 export const SHOW_CHIPS = qp.get('chips') === '1';
 
-// the frame box, in painting pixels: the chips and pieces collide with it, the
-// shadow and the floor are sized from it
+// The space the work moves in, in painting pixels. Nothing of it is drawn: the
+// pieces keep inside the triptych's outline while they are behind its front,
+// and no grain goes behind its back plane.
 export const FRAME_Z_FRONT = -170, FRAME_Z_BACK = 240;
-export const FW = 70;                   // rail width
-export const FLOOR_Y = IMG_H + 70;      // the bottom rail stands on the floor
+// The thin metal edge around the triptych, the only frame that is drawn: about
+// 1.6 cm wide and 6 cm deep at the default 2.6 m height, its front a little proud
+// of the painting. The bottom edge stands on the floor.
+export const EDGE_W = 8, EDGE_Z0 = -8, EDGE_Z1 = 20;
+export const FLOOR_Y = IMG_H + EDGE_W;
 
 export const SHADOW_RES = parseInt(qp.get('shadowres') || '2048', 10);
 // The shadow draw is a second full geometry pass, and geometry is the wall,

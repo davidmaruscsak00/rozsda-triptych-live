@@ -19,11 +19,12 @@ void main() {
 }
 `;
 
-// a matte, warm charcoal finish with a soft satin sheen and a faint grain,
-// lit by the one light, so it reads as an object in a lit room
+// brushed aged brass: a metal has no diffuse colour of its own, it tints what
+// it reflects. In AR there is no environment to reflect, so the room's sky and
+// floor gradient stands in for it, and the one light gives the bright edge.
 export const FRAME_FS = `#version 300 es
 precision highp float;
-uniform vec3  u_col;       // base colour
+uniform vec3  u_col;       // the metal's reflectance
 uniform vec3  u_camPos;
 in vec3 v_w;
 in vec3 v_n;
@@ -46,13 +47,18 @@ float vnoise(vec2 p) {
 void main() {
   vec3 N = normalize(v_n);
   vec3 V = normalize(u_camPos - v_w);
-  float grain = vnoise(vec2(v_w.x + v_w.z, v_w.y) * vec2(0.004, 0.06));
-  vec3 albedo = u_col * (0.92 + 0.16 * grain);
-  float vis = lightVis(v_w + N * 3.0, 0.0012);
-  float diff = max(dot(N, u_lightDir), 0.0);
-  vec3 col = albedo * (hemiAmbient(N) * 0.55 + LIGHT_COL * diff * vis * 0.9);
+  // brushed along the rails
+  float grain = vnoise(vec2(v_w.x + v_w.z, v_w.y) * vec2(0.02, 0.9));
+  vec3 F0 = u_col * (0.92 + 0.14 * grain);
+  float vis = lightVis(v_w + N * 1.5, 0.0012);
+  float ndv = max(dot(N, V), 0.0);
+  vec3 F = F0 + (1.0 - F0) * pow(1.0 - ndv, 5.0) * 0.5;
+  vec3 R = reflect(-V, N);
   vec3 H = normalize(u_lightDir + V);
-  col += LIGHT_COL * pow(max(dot(N, H), 0.0), 24.0) * 0.06 * vis;
+  float nh = max(dot(N, H), 0.0);
+  vec3 col = F * hemiAmbient(R) * 1.5 * mix(0.6, 1.0, vis)
+           + F0 * LIGHT_COL * max(dot(N, u_lightDir), 0.0) * vis * 0.3
+           + F * LIGHT_COL * (2.2 * pow(nh, 80.0) + 0.25 * pow(nh, 10.0)) * vis;
   outColor = vec4(col, 1.0);
 }
 `;

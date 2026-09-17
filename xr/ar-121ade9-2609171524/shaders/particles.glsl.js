@@ -27,13 +27,14 @@ uniform float u_np;                  // pieces per panel
 uniform float u_crumble;
 uniform float u_ctime;               // crumble clock
 uniform float u_swirl;               // 0 hover near the piece .. 1 the swirl along the triptych
-uniform float u_frameFront;          // frame box depth, sheet z
-uniform float u_frameBack;
-uniform float u_frameW;              // rail width
+uniform vec2  u_edgeZ;               // the metal edge's depth, sheet z: front, back
+uniform float u_edgeW;               // its width
+uniform float u_backZ;               // no grain goes behind this plane
 uniform sampler2D u_fluid;           // water velocity over the sheet, px/s
 uniform vec2  u_fluidOrigin;         // sheet px at fluid uv 0
 uniform vec2  u_fluidSize;           // sheet px the fluid grid spans
 uniform float u_gravity;             // 0 weightless .. 1 drips and pools
+uniform float u_maxSpeed;            // px/s no grain ever exceeds, however far it has to go
 
 out vec4 o_s0;
 out vec4 o_s1;
@@ -93,41 +94,46 @@ vec3 sheetFlow(vec3 q, float t) {
 }
 
 // ---- collision with the frame -----------------------------------------------
-// In sheet coordinates the frame is a few boxes: rails above and below the
-// whole sheet, uprights at the wing tips, the back panel, all spanning the
-// frame's depth. A particle found inside is pushed out through the nearest
-// face and bounces softly.
+// In sheet coordinates the metal edge is a thin band around the whole sheet:
+// rails above and below, uprights at the wing tips, spanning the edge's depth.
+// Inside the outline an invisible back plane keeps the dust in front of the
+// wall. A particle found inside either is pushed out through the nearest face
+// and bounces softly.
 void collideFrame(inout vec3 p, inout vec3 v) {
   float W = u_imgSize.x, H = u_imgSize.y;
   float panel = panelOf(p);
   vec3 q = toSheet(p, panel);
   vec3 u = transpose(panelFold(panel)) * v;
-  const float m = 3.0;
-  bool inDepth = q.z > u_frameFront && q.z < u_frameBack;
-  bool inOuter = q.x > -0.5 * W - u_frameW && q.x < 1.5 * W + u_frameW
-              && q.y > -u_frameW && q.y < H + u_frameW;
-  if (!inDepth || !inOuter) return;
-  bool inOpening = q.y > 0.0 && q.y < H && q.z < u_frameBack - 28.0
+  const float m = 2.0;
+  bool inOpening = q.y > 0.0 && q.y < H
                 && (panel != 1.0 || q.x > -0.5 * W) && (panel != 2.0 || q.x < 1.5 * W);
-  if (inOpening) return;
-  // candidate exits and how far each is
-  float best = q.z - u_frameFront; vec3 nrm = vec3(0.0, 0.0, -1.0);   // out the front
-  float dTop = min(abs(q.y), abs(q.y + u_frameW));
-  if (q.y < 0.0 && dTop < best) { best = dTop; nrm = abs(q.y) < abs(q.y + u_frameW) ? vec3(0, 1, 0) : vec3(0, -1, 0); }
-  float dBot = min(abs(q.y - H), abs(q.y - H - u_frameW));
-  if (q.y > H && dBot < best) { best = dBot; nrm = abs(q.y - H) < abs(q.y - H - u_frameW) ? vec3(0, -1, 0) : vec3(0, 1, 0); }
-  if (panel == 1.0 && q.x < -0.5 * W) {
-    float dIn = -0.5 * W - q.x, dOut = q.x + 0.5 * W + u_frameW;
-    if (min(dIn, dOut) < best) { best = min(dIn, dOut); nrm = dIn < dOut ? vec3(1, 0, 0) : vec3(-1, 0, 0); }
+  float best = 1e9; vec3 nrm = vec3(0.0);
+  if (inOpening) {
+    if (q.z > u_backZ) { best = q.z - u_backZ; nrm = vec3(0, 0, -1); }
+  } else if (q.z > u_edgeZ.x && q.z < u_edgeZ.y
+          && q.x > -0.5 * W - u_edgeW && q.x < 1.5 * W + u_edgeW
+          && q.y > -u_edgeW && q.y < H + u_edgeW) {
+    // candidate exits and how far each is
+    best = q.z - u_edgeZ.x; nrm = vec3(0, 0, -1);                       // out the front
+    if (u_edgeZ.y - q.z < best) { best = u_edgeZ.y - q.z; nrm = vec3(0, 0, 1); }
+    if (q.y < 0.0) {
+      if (-q.y < best) { best = -q.y; nrm = vec3(0, 1, 0); }
+      if (q.y + u_edgeW < best) { best = q.y + u_edgeW; nrm = vec3(0, -1, 0); }
+    }
+    if (q.y > H) {
+      if (q.y - H < best) { best = q.y - H; nrm = vec3(0, -1, 0); }
+      if (H + u_edgeW - q.y < best) { best = H + u_edgeW - q.y; nrm = vec3(0, 1, 0); }
+    }
+    if (q.x < -0.5 * W) {
+      if (-0.5 * W - q.x < best) { best = -0.5 * W - q.x; nrm = vec3(1, 0, 0); }
+      if (q.x + 0.5 * W + u_edgeW < best) { best = q.x + 0.5 * W + u_edgeW; nrm = vec3(-1, 0, 0); }
+    }
+    if (q.x > 1.5 * W) {
+      if (q.x - 1.5 * W < best) { best = q.x - 1.5 * W; nrm = vec3(-1, 0, 0); }
+      if (1.5 * W + u_edgeW - q.x < best) { best = 1.5 * W + u_edgeW - q.x; nrm = vec3(1, 0, 0); }
+    }
   }
-  if (panel == 2.0 && q.x > 1.5 * W) {
-    float dIn = q.x - 1.5 * W, dOut = 1.5 * W + u_frameW - q.x;
-    if (min(dIn, dOut) < best) { best = min(dIn, dOut); nrm = dIn < dOut ? vec3(-1, 0, 0) : vec3(1, 0, 0); }
-  }
-  if (q.z > u_frameBack - 28.0 && q.y > 0.0 && q.y < H) {
-    float dBack = q.z - (u_frameBack - 28.0);
-    if (dBack < best) { best = dBack; nrm = vec3(0, 0, -1); }
-  }
+  if (best > 1e8) return;
   q += nrm * (best + m);
   float vn = dot(u, nrm);
   if (vn < 0.0) u -= nrm * vn * 1.35;                     // soft bounce
@@ -149,6 +155,13 @@ vec3 hoverVel(vec3 p, PieceXf xf, float pieceIdx, float t) {
   off = vec3(c * off.x + s * off.z, off.y, (-s * off.x + c * off.z) * 0.6);
   vec3 target = cloud + off + 22.0 * curlT(off * 0.012 + hp * 7.0, t * 0.35);
   return (target - p) * 2.4;
+}
+
+// A soft speed limit: slow drift passes almost unchanged, and nothing moves
+// faster than u_maxSpeed, so a grain with a long way to go takes its time.
+vec3 limitSpeed(vec3 v) {
+  float s = length(v);
+  return s > 1e-4 ? v * (u_maxSpeed * tanh(s / u_maxSpeed) / s) : v;
 }
 
 void main() {
@@ -187,11 +200,29 @@ void main() {
     // setting how fast, and pool on the rail and the floor.
     vel.y += (min(pos.y, u_floorY - 60.0) - pos.y) * 2.5 * k * (1.0 - u_gravity);
     vel.y += u_gravity * 420.0 * u_dt;
+    vel = limitSpeed(vel);
     pos += vel * u_dt;
     if (pos.y > u_floorY - 4.0) {
       pos.y = u_floorY - 4.0;
       vel.y = min(vel.y, 0.0);
       vel.xz *= 1.0 - min(u_dt * 3.0, 1.0);                  // friction on the floor
+      // The waterfall never runs dry: a grain that has settled rises again at
+      // the top of the painting, a few at a time (about one in four each
+      // second at full Gravity), so the top never empties. It restarts its
+      // flight clock at RESPAWN_AGE, which the draw reads to fade it in.
+      float gate = cycHash3(vec3(a_src.zw * 311.0, floor(u_time * 4.0)));
+      if (u_gravity > 0.05 && gate < u_gravity * 0.06) {
+        float pnl = panelOf(pos);
+        vec3 q = toSheet(pos, pnl);
+        float W = u_imgSize.x;
+        q.x = clamp(q.x, -0.5 * W + 40.0, 1.5 * W - 40.0);
+        q.y = 20.0 + 140.0 * fract(a_src.w * 17.3);
+        q.z = -(30.0 + 160.0 * fract(a_src.z * 29.7));
+        float top = q.x < 0.0 ? 1.0 : (q.x > W ? 2.0 : 0.0);
+        pos = fromSheet(q, top);
+        vel = vec3(0.0, 15.0, 0.0);
+        age = RESPAWN_AGE;
+      }
     }
     // never through the face: slide over it
     if (panelOf(pos) < 0.5) {
@@ -203,7 +234,7 @@ void main() {
     // the spot has grown back: fly home onto the moving piece, then settle
     vec3 toHome = home - pos;
     float k = 1.0 - exp(-u_dt * 5.0);
-    vel = mix(vel, toHome * mix(2.2, 3.4, a_src.w), k);
+    vel = limitSpeed(mix(vel, toHome * mix(2.2, 3.4, a_src.w), k));
     pos += vel * u_dt;
     age += u_dt;
     if (dot(toHome, toHome) < 9.0) { pos = home; vel = vec3(0.0); age = 0.0; }
@@ -231,6 +262,7 @@ uniform vec3  u_camPos;    // eye, in painting space
 uniform float u_lit;       // 1 when shading, 0 in the shadow pass
 
 out vec3 v_col;
+out float v_fade;
 
 ${CYCLE}
 ${LIGHT}
@@ -242,8 +274,11 @@ void main() {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     gl_PointSize = 0.0;
     v_col = vec3(0.0);
+    v_fade = 0.0;
     return;
   }
+  // risen again at the top of the waterfall: fades in over its first second
+  v_fade = age >= RESPAWN_AGE ? smoothstep(0.0, 1.0, age - RESPAWN_AGE) : 1.0;
   gl_Position = u_viewProj * vec4(a_s0.xyz, 1.0);
 
   // mostly fine dust with the odd larger fleck; flecks crumble finer with age
@@ -279,11 +314,12 @@ void main() {
 export const PARTICLES_FS = `#version 300 es
 precision highp float;
 in vec3 v_col;
+in float v_fade;
 out vec4 outColor;
 void main() {
   vec2 q = gl_PointCoord * 2.0 - 1.0;
   float r2 = dot(q, q);
   if (r2 > 1.0) discard;
-  outColor = vec4(v_col, 1.0 - smoothstep(0.25, 1.0, r2));
+  outColor = vec4(v_col, (1.0 - smoothstep(0.25, 1.0, r2)) * v_fade);
 }
 `;

@@ -4,7 +4,8 @@
 // panel and this one are always the same state.
 //
 // It appears in front of you on entering AR. Left X shows or hides it, left Y
-// calls it back in front of you. Its last row leaves AR.
+// calls it back in front of you. Its last rows place the installation in the
+// room (Move, Turn, Size, Distance) and leave AR.
 import { gl, uni } from '../gl/context.js';
 import { program } from '../gl/program.js';
 import { PANEL_VS, PANEL_FS } from '../shaders/panel.glsl.js';
@@ -12,21 +13,27 @@ import { PANEL_VS, PANEL_FS } from '../shaders/panel.glsl.js';
 const ROWS = [
   ['Separate', 'sep'], ['Crumble', 'crumble'], ['Swirl', 'swirl'], ['Form', 'form'],
   ['Gravity', 'gravity'], ['Light', 'light'], ['Rhythm', 'rhythm'],
-  ['Pieces', 'pieces'], ['Turbulence', 'drift'], ['Auto pulse', 'auto'],
+  ['Pieces', 'pieces'], ['Turbulence', 'drift'], ['Auto play', 'auto'],
 ].map(([label, id]) => ({ label, el: document.getElementById(id) }));
-ROWS.push({ label: 'Distance', action: 'distance' });
+// placement rows: two buttons each, calling place(action, -1 | +1) (left, right);
+// Move is one wide button, its caption from placeState()
+ROWS.push({ label: 'Move', action: 'move' });
+ROWS.push({ label: 'Turn', action: 'turn', buttons: ['left', 'right'] });
+ROWS.push({ label: 'Size', action: 'size', buttons: ['smaller', 'larger'] });
+ROWS.push({ label: 'Distance', action: 'distance', buttons: ['closer', 'farther'] });
 ROWS.push({ label: 'Session', action: 'exit' });
-let onExit = () => {}, onDistance = () => {};
+let onExit = () => {}, onPlace = () => {}, placeState = () => ({ carrying: false });
 export function setPanelExit(fn) { onExit = fn; }
-// fn(metres): negative brings the installation toward you
-export function setPanelDistance(fn) { onDistance = fn; }
+// fn(action, side, source): action 'move' | 'turn' | 'size' | 'distance', side -1 | +1,
+// source the input source that pressed; state() returns { carrying }
+export function setPanelPlacement(fn, state) { onPlace = fn; placeState = state; }
 // which build is running, so a stale cache is visible at a glance
 const BUILD = window.BUILD || 'local';
 // what the browser reports for each input, refreshed a few times a second
 let inputsText = '', inputsAt = 0;
 
 // canvas layout, px
-const CW = 512, CH = 800, HEAD = 64, ROW_H = 56, TRACK_X0 = 196, TRACK_X1 = 470;
+const CW = 512, CH = 64 + 56 * ROWS.length + 64, HEAD = 64, ROW_H = 56, TRACK_X0 = 196, TRACK_X1 = 470;
 const W_M = 0.34, H_M = W_M * CH / CW;          // panel size, metres
 
 const canvas = document.createElement('canvas');
@@ -80,7 +87,7 @@ export function togglePanel() { panel.visible = !panel.visible; }
 
 // ---- drawing the board --------------------------------------------------------
 function redraw() {
-  const sig = inputsText + ROWS.map(r => !r.el ? '' : r.el.type === 'checkbox' ? +r.el.checked : (+r.el.value).toFixed(3)).join()
+  const sig = inputsText + +placeState().carrying + ROWS.map(r => !r.el ? '' : r.el.type === 'checkbox' ? +r.el.checked : (+r.el.value).toFixed(3)).join()
             + '|' + (hover ? hover.row : -1) + '|' + grabbed;
   if (sig === lastDrawn) return;
   lastDrawn = sig;
@@ -109,14 +116,24 @@ function redraw() {
       ctx.beginPath(); ctx.roundRect(TRACK_X0, mid - 18, TRACK_X1 - TRACK_X0, 36, 10); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.font = '600 22px "Segoe UI", system-ui, sans-serif';
       ctx.fillText('Leave AR', TRACK_X0 + 90, mid + 8);
-    } else if (row.action === 'distance') {                  // two buttons: closer | farther
+    } else if (row.action === 'move') {                      // one wide button
+      const carrying = placeState().carrying;
+      ctx.fillStyle = carrying ? 'rgba(120, 190, 110, 0.9)' : 'rgba(217, 164, 65, 0.85)';
+      ctx.beginPath(); ctx.roundRect(TRACK_X0, mid - 18, TRACK_X1 - TRACK_X0, 36, 10); ctx.fill();
+      ctx.fillStyle = '#1b1a18'; ctx.font = '600 20px "Segoe UI", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(carrying ? 'put down here' : 'pick up', (TRACK_X0 + TRACK_X1) / 2, mid + 7);
+      ctx.textAlign = 'left';
+    } else if (row.buttons) {                                // two buttons: left | right
       const half = (TRACK_X1 - TRACK_X0) / 2;
       ctx.fillStyle = 'rgba(217, 164, 65, 0.85)';
       ctx.beginPath(); ctx.roundRect(TRACK_X0, mid - 18, half - 6, 36, 10); ctx.fill();
       ctx.beginPath(); ctx.roundRect(TRACK_X0 + half + 6, mid - 18, half - 6, 36, 10); ctx.fill();
       ctx.fillStyle = '#1b1a18'; ctx.font = '600 20px "Segoe UI", system-ui, sans-serif';
-      ctx.fillText('closer', TRACK_X0 + 34, mid + 7);
-      ctx.fillText('farther', TRACK_X0 + half + 36, mid + 7);
+      ctx.textAlign = 'center';
+      ctx.fillText(row.buttons[0], TRACK_X0 + (half - 6) / 2, mid + 7);
+      ctx.fillText(row.buttons[1], TRACK_X0 + half + 6 + (half - 6) / 2, mid + 7);
+      ctx.textAlign = 'left';
     } else if (row.el.type === 'checkbox') {
       ctx.strokeStyle = '#d9a441'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.roundRect(TRACK_X0, mid - 15, 30, 30, 7); ctx.stroke();
@@ -221,10 +238,11 @@ export function updatePanel(xrFrame, session, space, selecting) {
   if (use.pressed && !pressedBefore && hover.row >= 0) {
     const el = ROWS[hover.row].el;
     if (ROWS[hover.row].action === 'exit') onExit();
-    else if (ROWS[hover.row].action === 'distance') onDistance(hover.x < (TRACK_X0 + TRACK_X1) / 2 ? -0.5 : 0.5);
+    else if (ROWS[hover.row].action) onPlace(ROWS[hover.row].action, hover.x < (TRACK_X0 + TRACK_X1) / 2 ? -1 : 1, use.src);
     else if (el.type === 'checkbox') el.checked = !el.checked;
     else grabbed = hover.row;
-    if (el && el.id === 'sep') document.getElementById('auto').checked = false;
+    // taking a slider takes over from automatic playback
+    if (el && el.type === 'range') document.getElementById('auto').checked = false;
   }
   if (!use.pressed) grabbed = -1;
   if (grabbed >= 0) {

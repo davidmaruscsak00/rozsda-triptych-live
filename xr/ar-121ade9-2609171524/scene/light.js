@@ -5,7 +5,7 @@
 // lit from the ceiling and a low sun would throw shadows through the real wall.
 import { gl, uni } from '../gl/context.js';
 import { txPanel } from './fold.js';
-import { IMG_W, FW, FLOOR_Y, FRAME_Z_BACK, SHADOW_RES, SUN_ELEV } from '../config.js';
+import { IMG_W, EDGE_W, FLOOR_Y, FRAME_Z_BACK, SHADOW_RES, SUN_ELEV } from '../config.js';
 
 // ---- shadow map ------------------------------------------------------------
 // One depth map per frame, shared by both eyes: the light's view does not
@@ -41,9 +41,9 @@ gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 // folded per panel.
 export const casterPts = [];
 {
-  const y0 = -FW - 300, y1 = FLOOR_Y + 200, z0 = -900, z1 = FRAME_Z_BACK + 60;
-  for (const [xa, xb, panel] of [[-IMG_W / 2 - FW - 150, 0, 1], [0, IMG_W, 0],
-                                 [IMG_W, 1.5 * IMG_W + FW + 150, 2]])
+  const y0 = -EDGE_W - 300, y1 = FLOOR_Y + 200, z0 = -900, z1 = FRAME_Z_BACK + 60;
+  for (const [xa, xb, panel] of [[-IMG_W / 2 - EDGE_W - 150, 0, 1], [0, IMG_W, 0],
+                                 [IMG_W, 1.5 * IMG_W + EDGE_W + 150, 2]])
     for (const x of [xa, xb]) for (const y of [y0, y1]) for (const z of [z0, z1])
       casterPts.push(txPanel([x, y, z], panel));
 }

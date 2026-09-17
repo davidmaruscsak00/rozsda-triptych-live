@@ -7,7 +7,7 @@ import { paintReady } from '../scene/paint.js';
 import { update, runShadowPass, drawScene } from '../scene/render.js';
 import { place, BACK_M, updatePlacement, faceViewer,
          worldFromPainting, paintingFromWorld } from './placement.js';
-import { summonPanel, togglePanel, updatePanel, drawPanel, setPanelExit, setPanelDistance } from './panel.js';
+import { summonPanel, togglePanel, updatePanel, drawPanel, setPanelExit, setPanelPlacement } from './panel.js';
 
 // ---- WebXR session ------------------------------------------------------
 // No locomotion: in a room you walk around it on your own feet.
@@ -16,15 +16,27 @@ const selecting = new Set();              // input sources mid-select (hand pinc
 let headPose = null;
 let panelUser = null;                      // the input source using the panel this frame
 setPanelExit(() => { if (xrSession) xrSession.end(); });
-setPanelDistance(metres => {
-  if (!headPose) return;
-  const hp = headPose.position;
-  const dx = place.x - hp.x, dz = place.z - hp.z, d = Math.hypot(dx, dz) || 1;
-  const nd = Math.max(0.5, d + metres);
-  place.x = hp.x + dx / d * nd;
-  place.z = hp.z + dz / d * nd;
-  faceViewer(hp);
-});
+// The board's placement rows. Move picks the installation up on the ray of the
+// hand or controller that pressed it; pressing again, or a trigger or pinch
+// anywhere off the board, puts it down. Turn is 15 degrees a press, Size 10 %,
+// Distance half a metre.
+setPanelPlacement((action, side, src) => {
+  if (action === 'move') {
+    place.carrying = !place.carrying;
+    place.carrier = place.carrying ? src : null;
+  } else if (action === 'turn') {
+    place.turn -= side * Math.PI / 12;
+  } else if (action === 'size') {
+    place.height = Math.min(12, Math.max(0.3, place.height * (side > 0 ? 1.1 : 1 / 1.1)));
+  } else if (action === 'distance' && headPose) {
+    const hp = headPose.position;
+    const dx = place.x - hp.x, dz = place.z - hp.z, d = Math.hypot(dx, dz) || 1;
+    const nd = Math.max(0.5, d + side * 0.5);
+    place.x = hp.x + dx / d * nd;
+    place.z = hp.z + dz / d * nd;
+    faceViewer(hp);
+  }
+}, () => place);
 function headFwd(q) {                       // head forward, flattened to the floor
   const fx = -(2 * (q.x * q.z + q.w * q.y));
   const fz = -(1 - 2 * (q.x * q.x + q.y * q.y));
@@ -38,12 +50,12 @@ function edge(key, down) {                  // true on the frame a button goes d
   return down && !prev;
 }
 
-// While carried, the installation rides the left hand's pointing ray where it
-// meets the real floor, turned to face you. A select (trigger, or a pinch with
-// bare hands) picks it up and puts it down again.
+// While carried, the installation rides a pointing ray where it meets the real
+// floor, turned to face you: the ray of the source that pressed Move on the
+// board, or the left hand's when a left trigger or pinch picked it up.
 function carry(xrFrame, pose) {
   for (const src of xrSession.inputSources) {
-    if (src.handedness !== 'left') continue;
+    if (place.carrier ? src !== place.carrier : src.handedness !== 'left') continue;
     const rp = xrFrame.getPose(src.targetRaySpace, xrSpace);
     if (!rp) continue;
     const m = rp.transform.matrix;
@@ -121,13 +133,16 @@ async function enterAR() {
     // shadow needs to land in the right place. 'local' would float it.
     xrSpace = await s.requestReferenceSpace('local-floor')
       .catch(() => s.requestReferenceSpace('local'));
-    place.placed = false; place.carrying = false;
+    place.placed = false; place.carrying = false; place.carrier = null;
     selecting.clear();
     s.addEventListener('selectstart', e => selecting.add(e.inputSource));
     s.addEventListener('selectend', e => selecting.delete(e.inputSource));
     s.addEventListener('select', (e) => {
-      // a pinch or trigger aimed at the panel belongs to the panel
-      if (e.inputSource.handedness === 'left' && e.inputSource !== panelUser) place.carrying = !place.carrying;
+      // a pinch or trigger aimed at the panel belongs to the panel; off the
+      // panel any source puts a carried installation down, the left picks it up
+      if (e.inputSource === panelUser) return;
+      if (place.carrying) { place.carrying = false; place.carrier = null; }
+      else if (e.inputSource.handedness === 'left') place.carrying = true;
     });
     vrBtn.textContent = 'Exit AR';
     s.addEventListener('end', () => {
