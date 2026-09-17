@@ -8,10 +8,12 @@ import { drawChips } from './chips.js';
 import { updateParticles, drawParticles } from './particles.js';
 import { runXform } from './xform.js';
 import { stepFluid } from './fluid.js';
+import { bakeCrumble } from './crumble.js';
 import { setLight } from './light.js';
 import { runFieldPass } from './chips.js';
 import { renderShadowMap, drawFloor } from './shadow.js';
 import { piecesEl } from '../ui.js';
+import { gpuBegin, gpuEnd } from '../gl/timers.js';
 import { SHADOW_RES } from '../config.js';
 
 gl.enable(gl.DEPTH_TEST);
@@ -22,12 +24,14 @@ gl.enable(gl.DEPTH_TEST);
 // run the identical vertex shaders, so the shadow can never drift from what the
 // eye sees. vpH is the target's height in px, for particle size.
 function drawInstallation(viewProj, cp, st, depth, vpH) {
+  gpuBegin('scene');
   drawFrame(viewProj, cp, depth);
   if (piecesEl.checked) {
     drawPieces(viewProj, cp, st, depth);
     if (!depth) drawCanvas(viewProj, cp, st);
-    drawParticles(viewProj, cp, st, depth, vpH);
   }
+  gpuEnd();
+  if (piecesEl.checked) drawParticles(viewProj, cp, st, depth, vpH);
   drawChips(viewProj, cp, depth);
 }
 
@@ -38,7 +42,7 @@ export function update(st) {
   gl.bindTexture(gl.TEXTURE_2D, paintTex);
   runFieldPass(st);
   runXform(st);
-  if (piecesEl.checked) { stepFluid(st); updateParticles(st); }
+  if (piecesEl.checked) { bakeCrumble(st.ctime); stepFluid(st); updateParticles(st); }
 }
 
 // ---- the shadow map, once per frame --------------------------------------
@@ -55,5 +59,7 @@ export function drawScene(viewProj, cp, st, vpH) {
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, paintTex);
   drawInstallation(viewProj, cp, st, false, vpH);
+  gpuBegin('scene');
   drawFloor(viewProj);
+  gpuEnd();
 }

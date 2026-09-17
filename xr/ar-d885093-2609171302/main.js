@@ -5,6 +5,7 @@ import { paintReady } from './scene/paint.js';
 import { update, runShadowPass, drawScene } from './scene/render.js';
 import { camBasis, camPos, flyStep, monoViewProj } from './view/camera.js';
 import { initXR, inHeadset } from './view/xr.js';
+import { EMULATE } from './config.js';
 
 function frame() {
   if (inHeadset()) return;            // the XR loop drives rendering instead
@@ -24,5 +25,14 @@ function frame() {
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   drawScene(viewProj, cp, st, canvas.height);
 }
-initXR(() => requestAnimationFrame(frame));
-frame();
+
+if (EMULATE) {
+  // the headset's frame on this GPU (view/emulate.js); loaded only when asked,
+  // since its 4x MSAA eye buffer alone is about 250 MB
+  const { emulateFrame } = await import('./view/emulate.js');
+  const loop = () => { if (emulateFrame()) requestAnimationFrame(loop); };
+  loop();
+} else {
+  initXR(() => requestAnimationFrame(frame));
+  frame();
+}

@@ -11,7 +11,9 @@ export const N_PARTICLES = N_MAIN + N_WEDGE;
 // Particles the painting breaks into, over the base painting; the mirrored
 // wings add about as many again. ?particles= (the Quality menu sets it).
 // 2.4M suits a desktop GPU; a standalone headset starts far lower.
-export const ON_HEADSET = /OculusBrowser|Quest|Pico|Wolvic/i.test(navigator.userAgent);
+// ?headset=1 emulates the Quest session on a desktop GPU (view/emulate.js)
+export const EMULATE = qp.get('headset') === '1';
+export const ON_HEADSET = EMULATE || /OculusBrowser|Quest|Pico|Wolvic/i.test(navigator.userAgent);
 export const N_POINTS = Math.max(0, parseInt(qp.get('particles') || (ON_HEADSET ? '150000' : '2400000'), 10));
 
 // The chip field in the depth behind the painting is off by default; ?chips=1

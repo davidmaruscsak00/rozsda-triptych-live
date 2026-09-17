@@ -57,8 +57,13 @@ const statsEl = document.getElementById('stats');
 // ---- per-frame state ---------------------------------------------------
 // Called once per frame. inHeadset mirrors the stats line to the console,
 // because inside a headset the DOM is not visible.
+// ?fixeddt= steps the clock by that many seconds a frame whatever the wall
+// clock does, so two builds can be compared frame for frame.
+const FIXED_DT = parseFloat(qp.get('fixeddt') || '0');
+let frameNo = 0;
 export function tick(inHeadset) {
-  const t = (performance.now() - t0) / 1000;
+  frameNo++;
+  const t = FIXED_DT > 0 ? frameNo * FIXED_DT : (performance.now() - t0) / 1000;
   let sep = parseFloat(sepEl.value);
   if (autoEl.checked) sep *= 0.5 - 0.5 * Math.cos(t * 0.35);
   const drift = driftEl.checked ? 1 : 0;
@@ -74,7 +79,7 @@ export function tick(inHeadset) {
   if (statAcc > 0.5) {
     statAcc = 0;
     const line = (1000 / Math.max(0.1, ftEma)).toFixed(0) + ' fps · ' + ftEma.toFixed(1) + ' ms'
-      + (extTimer ? ' · sim ' + gpuMs.field.toFixed(2) + ' · shadow ' + gpuMs.shadow.toFixed(2) + ' · particles ' + gpuMs.draw.toFixed(2) + ' ms' : '')
+      + (extTimer ? ' · sim ' + (gpuMs.xform + gpuMs.crumble + gpuMs.fluid + gpuMs.sim + gpuMs.field).toFixed(2) + ' · shadow ' + gpuMs.shadow.toFixed(2) + ' · particles ' + gpuMs.draw.toFixed(2) + ' ms' : '')
       + (SHOW_CHIPS ? ' · ' + N_PARTICLES.toLocaleString() + ' chips' : '');
     if (statsEl) statsEl.textContent = line + ' · build ' + (window.BUILD || 'local');
     // inside a headset the DOM is not visible, so mirror it somewhere a

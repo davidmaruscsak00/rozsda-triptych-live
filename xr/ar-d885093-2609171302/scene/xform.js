@@ -47,7 +47,7 @@ gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2
 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
 export function runXform(st) {
-  gpuBegin('field');
+  gpuBegin('xform');
   for (let i = 0; i < 3; i++) {                  // never sampled while being written
     gl.activeTexture(gl.TEXTURE3 + i);
     gl.bindTexture(gl.TEXTURE_2D, null);

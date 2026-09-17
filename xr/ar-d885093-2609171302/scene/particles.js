@@ -1,8 +1,9 @@
 // The pieces as particles. Each particle is a point on one piece in one panel,
 // stored in that piece's own frame, so it rides along wherever the piece flies.
-// Each frame one transform-feedback step moves every particle: sitting on its
-// piece, released where a broken-off piece crumbles, pulled back onto the
-// piece where it grows back. State lives in two buffers that swap every frame.
+// Each frame one transform-feedback step moves the particles of every piece
+// that can crumble: sitting on its piece, released where a broken-off piece
+// crumbles, pulled back onto the piece where it grows back. State lives in two
+// buffers that swap every frame.
 import { gl, uni } from '../gl/context.js';
 import { program, programTF, DEPTH_FS } from '../gl/program.js';
 import { gpuBegin, gpuEnd } from '../gl/timers.js';
@@ -11,7 +12,9 @@ import { NP, pieceThickness, bindXform } from './xform.js';
 import { bindFluid } from './fluid.js';
 import { bindLight } from './light.js';
 import { bindRelief } from './relief.js';
-import { PIECES, IMG_W, IMG_H, N_POINTS, SHADOW_FRAC, FLOOR_Y, FRAME_Z_FRONT, FRAME_Z_BACK, FW } from '../config.js';
+import { N_KEYS, keyOrder, active, updateActive } from './active.js';
+import { bindCrumble } from './crumble.js';
+import { qp, PIECES, IMG_W, IMG_H, N_POINTS, SHADOW_FRAC, FLOOR_Y, FRAME_Z_FRONT, FRAME_Z_BACK, FW } from '../config.js';
 
 const simProg = programTF(SIM_VS, DEPTH_FS, ['o_s0', 'o_s1']);
 const drawProg = program(PARTICLES_VS, PARTICLES_FS);
@@ -48,7 +51,7 @@ PIECES.forEach((p, pi) => {
     if (n) { tris.push(pi, i, n); count += n * nPanels; }
   }
 });
-const statics = new Float32Array(count * 8);    // local.xyz, piece index, src.xy, r1, r2
+let statics = new Float32Array(count * 8);      // local.xyz, piece index, src.xy, r1, r2
 {
   let o = 0;
   for (let k = 0; k < tris.length; k += 3) {
@@ -79,6 +82,57 @@ for (let i = count - 1; i > 0; i--) {
     const t = statics[i * 8 + k]; statics[i * 8 + k] = statics[j * 8 + k]; statics[j * 8 + k] = t;
   }
 }
+
+// Regroup the same records by piece, so the passes can skip whole pieces that
+// cannot crumble (scene/active.js). Two layers: the shadow subset (the first
+// SHADOW_FRAC of the shuffled order, as before) and the rest, each holding one
+// contiguous range per piece, pieces in keyOrder. Within a piece the shuffled
+// order is kept.
+const nShadow = Math.ceil(count * SHADOW_FRAC);
+const layers = [{ start: 0, end: nShadow }, { start: nShadow, end: count }].map(({ start, end }) => {
+  const size = new Int32Array(N_KEYS);
+  for (let i = start; i < end; i++) size[statics[i * 8 + 3]]++;
+  const first = new Int32Array(N_KEYS);
+  let o = start;
+  for (const k of keyOrder) { first[k] = o; o += size[k]; }
+  return { start, end, first, size };
+});
+{
+  const grouped = new Float32Array(count * 8);
+  for (const L of layers) {
+    const at = L.first.slice();
+    for (let i = L.start; i < L.end; i++) {
+      const k = statics[i * 8 + 3];
+      grouped.set(statics.subarray(i * 8, i * 8 + 8), at[k]++ * 8);
+    }
+  }
+  statics = grouped;
+}
+// Runs of active pieces, one draw call each. Inactive stretches shorter than
+// the gap are passed through rather than splitting a run. Starting and ending
+// transform feedback costs far more than a draw call, so the simulation takes
+// few long runs and the eyes many short ones. ?cull=0 steps and draws every
+// particle, as before culling; ?simgap= and ?drawgap= are in particles.
+const CULL = qp.get('cull') !== '0';
+const SIM_GAP = parseInt(qp.get('simgap') || String(Math.floor(count / 8)), 10);
+const DRAW_GAP = parseInt(qp.get('drawgap') || String(Math.floor(count / 2000)), 10);
+const runSet = (ls, gap) => ({ ls, gap, runs: new Int32Array(4 * N_KEYS), n: 0 });
+const simRuns = runSet(layers, SIM_GAP), eyeRuns = runSet(layers, DRAW_GAP), shadowRuns = runSet([layers[0]], DRAW_GAP);
+function buildRuns(R) {
+  let n = 0, runStart = -1, runEnd = -1;
+  for (const L of R.ls)
+    for (const k of keyOrder) {
+      const size = L.size[k];
+      if (!size || (CULL && !active[k])) continue;
+      const f = L.first[k];
+      if (runStart >= 0 && f - runEnd <= R.gap) { runEnd = f + size; continue; }
+      if (runStart >= 0) { R.runs[n++] = runStart; R.runs[n++] = runEnd - runStart; }
+      runStart = f; runEnd = f + size;
+    }
+  if (runStart >= 0) { R.runs[n++] = runStart; R.runs[n++] = runEnd - runStart; }
+  R.n = n / 2;
+}
+
 const state = new Float32Array(count * 8);      // pos.xyz, age, vel.xyz, hold
 for (let i = 0; i < count; i++) state[i * 8 + 7] = 1;
 
@@ -114,9 +168,43 @@ let cur = 0;                                   // index of the buffer holding th
 
 export const particleCount = count;
 
+// For the bench: how many particles are in flight, and how many are drawn.
+export function particleCensus() {
+  const s = new Float32Array(count * 8);
+  gl.bindBuffer(gl.ARRAY_BUFFER, stateBufs[cur]);
+  gl.getBufferSubData(gl.ARRAY_BUFFER, 0, s);
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
+  let flying = 0, shown = 0;
+  for (let i = 0; i < count; i++) {
+    if (s[i * 8 + 3] > 0) flying++;
+    if (s[i * 8 + 3] > 0 || s[i * 8 + 7] <= -0.26) shown++;   // SURFACE_AT
+  }
+  let stepped = 0, drawn = 0;
+  for (let r = 0; r < simRuns.n; r++) stepped += simRuns.runs[2 * r + 1];
+  for (let r = 0; r < eyeRuns.n; r++) drawn += eyeRuns.runs[2 * r + 1];
+  return { flying, shown, stepped, drawn, simRuns: simRuns.n, eyeRuns: eyeRuns.n };
+}
+
+// one draw call per run
+function drawRuns(R, withFeedback, dst) {
+  for (let r = 0; r < R.n; r++) {
+    const first = R.runs[2 * r], n = R.runs[2 * r + 1];
+    if (withFeedback) {
+      gl.bindBufferRange(gl.TRANSFORM_FEEDBACK_BUFFER, 0, dst, first * 32, n * 32);
+      gl.beginTransformFeedback(gl.POINTS);
+    }
+    gl.drawArrays(gl.POINTS, first, n);
+    if (withFeedback) gl.endTransformFeedback();
+  }
+}
+
 // Once per frame, before any drawing.
+// Only the particles of active pieces are stepped; the rest sit at rest on
+// their piece and keep their last state in both buffers.
 export function updateParticles(st) {
-  gpuBegin('field');
+  if (CULL) updateActive(st);
+  [simRuns, eyeRuns, shadowRuns].forEach(buildRuns);
+  gpuBegin('sim');
   gl.useProgram(simProg);
   gl.uniform2f(uni(simProg, 'u_imgSize'), W, H);
   gl.uniform1f(uni(simProg, 'u_time'), st.t);
@@ -134,12 +222,10 @@ export function updateParticles(st) {
   bindFluid(simProg);
   bindRelief(simProg, st.form);
   bindXform(simProg);
+  bindCrumble(simProg);
   gl.bindVertexArray(vaos[cur]);
   gl.enable(gl.RASTERIZER_DISCARD);
-  gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, stateBufs[1 - cur]);
-  gl.beginTransformFeedback(gl.POINTS);
-  gl.drawArrays(gl.POINTS, 0, count);
-  gl.endTransformFeedback();
+  drawRuns(simRuns, true, stateBufs[1 - cur]);
   gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, null);
   gl.disable(gl.RASTERIZER_DISCARD);
   gl.bindVertexArray(null);
@@ -150,8 +236,8 @@ export function updateParticles(st) {
 // Shaded into an eye (soft dots through alpha-to-coverage), or into the shadow
 // map as a thinned, enlarged subset. vpH is the target's height in px.
 export function drawParticles(viewProj, cp, st, depth, vpH) {
-  const n = depth ? Math.ceil(count * SHADOW_FRAC) : count;
-  if (n === 0) return;
+  const R = depth ? shadowRuns : eyeRuns;
+  if (R.n === 0) return;
   if (!depth) gpuBegin('draw');
   gl.useProgram(drawProg);
   gl.uniformMatrix4fv(uni(drawProg, 'u_viewProj'), false, viewProj);
@@ -164,7 +250,7 @@ export function drawParticles(viewProj, cp, st, depth, vpH) {
   bindLight(drawProg);
   if (!depth) gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
   gl.bindVertexArray(vaos[cur]);
-  gl.drawArrays(gl.POINTS, 0, n);
+  drawRuns(R, false);
   gl.bindVertexArray(null);
   if (!depth) { gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE); gpuEnd(); }
 }

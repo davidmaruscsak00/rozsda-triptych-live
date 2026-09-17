@@ -3,6 +3,7 @@
 // See shaders/fluid.glsl.js.
 import { gl, uni } from '../gl/context.js';
 import { program } from '../gl/program.js';
+import { gpuBegin, gpuEnd } from '../gl/timers.js';
 import { FLUID_VS, ADVECT_FS, FORCE_FS, CURL_FS, VORTICITY_FS, DIVERGENCE_FS,
          JACOBI_FS, PROJECT_FS } from '../shaders/fluid.glsl.js';
 import { IMG_W, IMG_H } from '../config.js';
@@ -66,6 +67,7 @@ const swapVel = () => { vel = [vel[1], vel[0]]; };
 
 export function stepFluid(st) {
   if (st.dtr <= 0) return;
+  gpuBegin('fluid');
   gl.disable(gl.DEPTH_TEST);
   gl.viewport(0, 0, GX, GY);
   gl.bindVertexArray(emptyVao);
@@ -95,6 +97,7 @@ export function stepFluid(st) {
   gl.bindVertexArray(null);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.enable(gl.DEPTH_TEST);
+  gpuEnd();
 }
 
 // Binds the current velocity to unit 6 for a program that samples u_fluid.

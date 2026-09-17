@@ -6,6 +6,7 @@ import { PIECES_VS, PIECES_FS, PIECES_DEPTH_FS } from '../shaders/pieces.glsl.js
 import { PIECES, IMG_W, IMG_H } from '../config.js';
 import { NP, pieceThickness, bindXform } from './xform.js';
 import { bindLight } from './light.js';
+import { bindCrumble } from './crumble.js';
 
 const pcProg = program(PIECES_VS, PIECES_FS);
 const pcDepth = depthTwin(PIECES_VS, pcProg, PIECES_DEPTH_FS);
@@ -82,6 +83,7 @@ export function drawPieces(viewProj, cp, st, depth) {
   gl.uniform1f(uni(pp, 'u_ctime'), st.ctime);
   gl.uniform1f(uni(pp, 'u_np'), NP);
   bindXform(pp);
+  bindCrumble(pp);
   if (!depth) {
     gl.uniform3f(uni(pp, 'u_camPos'), cp[0], cp[1], cp[2]);
     bindLight(pp);
