@@ -8,6 +8,7 @@ import { update, runShadowPass, drawScene } from '../scene/render.js';
 import { place, BACK_M, updatePlacement, faceViewer,
          worldFromPainting, paintingFromWorld } from './placement.js';
 import { summonPanel, togglePanel, updatePanel, drawPanel, setPanelExit, setPanelPlacement } from './panel.js';
+import { startAnchors, syncAnchor, anchorWaiting, anchorStatus, placementChanged } from './anchor.js';
 
 // ---- WebXR session ------------------------------------------------------
 // No locomotion: in a room you walk around it on your own feet.
@@ -15,12 +16,21 @@ let xrSession = null, xrSpace = null, xrFbo = null;
 const selecting = new Set();              // input sources mid-select (hand pinches)
 let headPose = null;
 let panelUser = null;                      // the input source using the panel this frame
+let panelPlaced = false;                   // the board is put in front of you once per session
 setPanelExit(() => { if (xrSession) xrSession.end(); });
 // The board's placement rows. Move picks the installation up on the ray of the
 // hand or controller that pressed it; pressing again, or a trigger or pinch
 // anywhere off the board, puts it down. Turn is 15 degrees a press, Size 10 %,
-// Distance half a metre.
+// Distance half a metre. Lock stops all of them, and the left trigger, pinch and
+// stick, so visitors cannot move it by accident.
 setPanelPlacement((action, side, src) => {
+  if (action === 'lock') {
+    place.locked = !place.locked;
+    if (place.locked && place.carrying) { place.carrying = false; place.carrier = null; }
+    return;
+  }
+  if (place.locked) return;
+  placementChanged();
   if (action === 'move') {
     place.carrying = !place.carrying;
     place.carrier = place.carrying ? src : null;
@@ -36,7 +46,7 @@ setPanelPlacement((action, side, src) => {
     place.z = hp.z + dz / d * nd;
     faceViewer(hp);
   }
-}, () => place);
+}, () => ({ carrying: place.carrying, locked: place.locked, anchor: anchorStatus() }));
 function headFwd(q) {                       // head forward, flattened to the floor
   const fx = -(2 * (q.x * q.z + q.w * q.y));
   const fz = -(1 - 2 * (q.x * q.x + q.y * q.y));
@@ -95,8 +105,11 @@ function readControllers(session, dtr) {
       if (edge('l4', bt[4] && bt[4].pressed)) togglePanel();
       if (edge('l5', bt[5] && bt[5].pressed) && headPose)
         summonPanel(headPose.position, headFwd(headPose.orientation));
-      place.turn -= dead(sx) * dtr * 1.2;
-      place.height = Math.min(12, Math.max(0.3, place.height * Math.exp(-dead(sy) * dtr * 0.8)));
+      if (!place.locked && (dead(sx) || dead(sy))) {
+        place.turn -= dead(sx) * dtr * 1.2;
+        place.height = Math.min(12, Math.max(0.3, place.height * Math.exp(-dead(sy) * dtr * 0.8)));
+        placementChanged();
+      }
     }
   }
   // both thumbsticks clicked together leave AR, whether or not the panel is up
@@ -122,7 +135,7 @@ async function enterAR() {
   try {
     await gl.makeXRCompatible();
     const s = await navigator.xr.requestSession('immersive-ar',
-      { optionalFeatures: ['local-floor', 'hand-tracking'] });
+      { optionalFeatures: ['local-floor', 'hand-tracking', 'anchors'] });
     xrSession = s;
     // antialias:true gives 4x MSAA that resolves inside tile memory on Adreno.
     // alpha:true is what lets passthrough through wherever nothing is drawn.
@@ -133,7 +146,9 @@ async function enterAR() {
     // shadow needs to land in the right place. 'local' would float it.
     xrSpace = await s.requestReferenceSpace('local-floor')
       .catch(() => s.requestReferenceSpace('local'));
-    place.placed = false; place.carrying = false; place.carrier = null;
+    place.placed = false; place.carrying = false; place.carrier = null; place.locked = false;
+    panelPlaced = false;
+    startAnchors(s);                        // locks it again when a saved place exists
     selecting.clear();
     s.addEventListener('selectstart', e => selecting.add(e.inputSource));
     s.addEventListener('selectend', e => selecting.delete(e.inputSource));
@@ -141,8 +156,8 @@ async function enterAR() {
       // a pinch or trigger aimed at the panel belongs to the panel; off the
       // panel any source puts a carried installation down, the left picks it up
       if (e.inputSource === panelUser) return;
-      if (place.carrying) { place.carrying = false; place.carrier = null; }
-      else if (e.inputSource.handedness === 'left') place.carrying = true;
+      if (place.carrying) { place.carrying = false; place.carrier = null; placementChanged(); }
+      else if (e.inputSource.handedness === 'left' && !place.locked) place.carrying = true;
     });
     vrBtn.textContent = 'Exit AR';
     s.addEventListener('end', () => {
@@ -167,21 +182,25 @@ function onXRFrame(tMs, xrFrame) {
   xrFbo = layer.framebuffer;
   const st = tick(true);
   const hp = pose.transform.position;
-  if (!place.placed) {                      // first drop: ahead of wherever you look
+  if (!panelPlaced) { summonPanel(hp, headFwd(pose.transform.orientation)); panelPlaced = true; }
+  // the room anchor, when there is one, says where the installation stands
+  if (syncAnchor(xrFrame, s, xrSpace)) place.placed = true;
+  if (!place.placed && !anchorWaiting()) { // first drop: ahead of wherever you look
     const [fx, fz] = headFwd(pose.transform.orientation);
     place.x = hp.x + fx * BACK_M;
     place.z = hp.z + fz * BACK_M;
     faceViewer(hp);
     place.placed = true;
-    summonPanel(hp, [fx, fz]);
+    // anchor it, unless a saved place was asked for and may still turn up
+    if (!place.locked) placementChanged();
   }
   headPose = pose.transform;
   if (place.carrying) carry(xrFrame, pose);
   readControllers(s, st.dtr);
   panelUser = updatePanel(xrFrame, s, xrSpace, selecting);
   updatePlacement();
-  update(st);   // once per frame, not once per eye
-  runShadowPass(st);
+  const shown = place.placed;               // nothing drawn while a saved place is being found
+  if (shown) { update(st); runShadowPass(st); }   // once per frame, not once per eye
   gl.bindFramebuffer(gl.FRAMEBUFFER, xrFbo);
   gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -193,7 +212,7 @@ function onXRFrame(tMs, xrFrame) {
     const viewProj = mul4(eyeViewProj, worldFromPainting);
     const p = view.transform.position;
     const cp = xf4(paintingFromWorld, p.x, p.y, p.z);
-    drawScene(viewProj, cp, st, vp.height);
+    if (shown) drawScene(viewProj, cp, st, vp.height);
     drawPanel(eyeViewProj);
   }
 }

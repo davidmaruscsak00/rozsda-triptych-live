@@ -15,6 +15,7 @@ export const place = {
   height: parseFloat(qp.get('scale') || '2.6'),   // triptych height, m
   carrying: false, placed: false,
   carrier: null,                            // the input source whose ray moves it, or null for any
+  locked: false,                            // nothing moves it; see view/anchor.js for keeping it in the room
 };
 // the wings reach about 1.15 m toward you at this size, so their tips land
 // about 0.85 m away; the board's Move, Turn, Size and Distance rows go from there
