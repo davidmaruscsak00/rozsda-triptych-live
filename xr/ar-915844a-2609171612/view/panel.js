@@ -196,7 +196,7 @@ function redraw() {
 // slider keeps it until it lets go. Returns the input source using the board,
 // or null, so the caller can keep that source's other bindings quiet.
 const TOUCH_HOVER = 0.08, TOUCH_PRESS = 0.012;   // metres in front of the board
-let active = null;                               // the source that owns the grab
+let active = null, activeTouch = false;          // the source that owns the grab, and whether by fingertip
 
 function boardPoint(p) {
   const q = sub(p, panel.c);
@@ -215,7 +215,7 @@ function probe(xrFrame, src, space, selecting) {
       const tip = [jp.transform.position.x, jp.transform.position.y, jp.transform.position.z];
       const [x, y, dist] = boardPoint(tip);
       if ((onBoard(x, y) || active === src) && dist < TOUCH_HOVER && dist > -0.08)
-        return { src, x, y, pressed: dist < TOUCH_PRESS, near: dist, ray: null };
+        return { src, x, y, pressed: dist < TOUCH_PRESS, near: dist, ray: null, touch: true };
     }
   }
   // point with the target ray
@@ -250,11 +250,14 @@ export function updatePanel(xrFrame, session, space, selecting) {
     redraw();
     return null;
   }
-  if (use.src !== active) pressedBefore = use.pressed;  // a press already held does not click
-  active = use.src;
+  // a press already held does not click, and neither does a hand switching
+  // between its ray and its fingertip (the fingertip arriving behind the board,
+  // or a joint dropout, would otherwise click wherever it lands)
+  if (use.src !== active || !!use.touch !== activeTouch) pressedBefore = use.pressed;
+  active = use.src; activeTouch = !!use.touch;
   const row = Math.floor((use.y - HEAD) / ROW_H);
   hover = { row: row >= 0 && row < ROWS.length ? row : -1, x: use.x, y: use.y,
-            hide: use.y < HEAD && use.x > HIDE_X0 };
+            hide: use.y >= 14 && use.y <= 50 && use.x >= HIDE_X0 && use.x <= CW - 20 };   // the drawn button only
   ray = use.ray;
   if (hover.hide && use.pressed && !pressedBefore) {
     panel.visible = false; grabbed = -1; active = null; pressedBefore = false; hover = null; ray = null;

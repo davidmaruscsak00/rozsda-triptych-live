@@ -169,7 +169,9 @@ async function enterAR() {
       selecting.add(e.inputSource);
       if (e.inputSource === panelUser) boardPress.add(e.inputSource);
     });
-    s.addEventListener('selectend', e => selecting.delete(e.inputSource));
+    // select comes before selectend, so a pinch that ends without a select (tracking
+    // lost mid-pinch) cannot leave its board mark to swallow the next one
+    s.addEventListener('selectend', e => { selecting.delete(e.inputSource); boardPress.delete(e.inputSource); });
     s.addEventListener('select', (e) => {
       // a pinch or trigger that started on the panel belongs to the panel (even
       // when it hid the panel), and so does the two-hand pinch that calls it
