@@ -1,12 +1,11 @@
-// The control panel inside AR: every slider and toggle of the page's own panel,
+// The control panel inside VR: every slider and toggle of the page's own panel,
 // drawn on a floating board, worked by touching it with a fingertip, or pointing
 // with a controller ray + trigger or a hand ray + pinch. It drives the page's inputs directly, so the page's
 // panel and this one are always the same state.
 //
-// It appears in front of you on entering AR. Its hide button or left X hides it;
+// It appears in front of you on entering VR. Its hide button or left X hides it;
 // left Y, or pinching with both hands for a second and a half, calls it back in
-// front of you. Its last rows place the installation in the
-// room (Move, Turn, Size, Distance) and leave AR.
+// front of you. Its last row leaves VR.
 import { gl, uni } from '../gl/context.js';
 import { program } from '../gl/program.js';
 import { PANEL_VS, PANEL_FS } from '../shaders/panel.glsl.js';
@@ -16,19 +15,9 @@ const ROWS = [
   ['Gravity', 'gravity'], ['Light', 'light'], ['Rhythm', 'rhythm'],
   ['Pieces', 'pieces'], ['Turbulence', 'drift'], ['Auto play', 'auto'],
 ].map(([label, id]) => ({ label, el: document.getElementById(id) }));
-// placement rows: two buttons each, calling place(action, -1 | +1) (left, right);
-// Lock and Move are one wide button each, their captions from placeState()
-ROWS.push({ label: 'Lock', action: 'lock' });
-ROWS.push({ label: 'Move', action: 'move' });
-ROWS.push({ label: 'Turn', action: 'turn', buttons: ['left', 'right'] });
-ROWS.push({ label: 'Size', action: 'size', buttons: ['smaller', 'larger'] });
-ROWS.push({ label: 'Distance', action: 'distance', buttons: ['closer', 'farther'] });
 ROWS.push({ label: 'Session', action: 'exit' });
-let onExit = () => {}, onPlace = () => {}, placeState = () => ({ carrying: false, locked: false, anchor: '' });
+let onExit = () => {};
 export function setPanelExit(fn) { onExit = fn; }
-// fn(action, side, source): action 'move' | 'turn' | 'size' | 'distance', side -1 | +1,
-// source the input source that pressed; state() returns { carrying, locked, anchor }
-export function setPanelPlacement(fn, state) { onPlace = fn; placeState = state; }
 // which build is running, so a stale cache is visible at a glance
 const BUILD = window.BUILD || 'local';
 // what the browser reports for each input, refreshed a few times a second
@@ -90,8 +79,7 @@ export function togglePanel() { panel.visible = !panel.visible; }
 
 // ---- drawing the board --------------------------------------------------------
 function redraw() {
-  const ps = placeState();
-  const sig = inputsText + +(hover && hover.hide) + +ps.carrying + +ps.locked + ps.anchor + ROWS.map(r => !r.el ? '' : r.el.type === 'checkbox' ? +r.el.checked : (+r.el.value).toFixed(3)).join()
+  const sig = inputsText + +(hover && hover.hide) + ROWS.map(r => !r.el ? '' : r.el.type === 'checkbox' ? +r.el.checked : (+r.el.value).toFixed(3)).join()
             + '|' + (hover ? hover.row : -1) + '|' + grabbed;
   if (sig === lastDrawn) return;
   lastDrawn = sig;
@@ -126,36 +114,7 @@ function redraw() {
       ctx.fillStyle = 'rgba(200, 80, 60, 0.85)';
       ctx.beginPath(); ctx.roundRect(TRACK_X0, mid - 18, TRACK_X1 - TRACK_X0, 36, 10); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.font = '600 22px "Segoe UI", system-ui, sans-serif';
-      ctx.fillText('Leave AR', TRACK_X0 + 90, mid + 8);
-    } else if (row.action === 'lock') {                      // one wide button
-      ctx.fillStyle = ps.locked ? 'rgba(120, 190, 110, 0.9)' : 'rgba(217, 164, 65, 0.85)';
-      ctx.beginPath(); ctx.roundRect(TRACK_X0, mid - 18, TRACK_X1 - TRACK_X0, 36, 10); ctx.fill();
-      ctx.fillStyle = '#1b1a18'; ctx.font = '600 20px "Segoe UI", system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(ps.locked ? 'locked in place' : 'unlocked: lock it', (TRACK_X0 + TRACK_X1) / 2, mid + 7);
-      ctx.textAlign = 'left';
-    } else if (row.action === 'move') {                      // one wide button
-      const carrying = ps.carrying;
-      if (ps.locked) ctx.globalAlpha = 0.35;
-      ctx.fillStyle = carrying ? 'rgba(120, 190, 110, 0.9)' : 'rgba(217, 164, 65, 0.85)';
-      ctx.beginPath(); ctx.roundRect(TRACK_X0, mid - 18, TRACK_X1 - TRACK_X0, 36, 10); ctx.fill();
-      ctx.fillStyle = '#1b1a18'; ctx.font = '600 20px "Segoe UI", system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(carrying ? 'put down here' : 'pick up', (TRACK_X0 + TRACK_X1) / 2, mid + 7);
-      ctx.textAlign = 'left';
-      ctx.globalAlpha = 1;
-    } else if (row.buttons) {                                // two buttons: left | right
-      const half = (TRACK_X1 - TRACK_X0) / 2;
-      if (ps.locked) ctx.globalAlpha = 0.35;
-      ctx.fillStyle = 'rgba(217, 164, 65, 0.85)';
-      ctx.beginPath(); ctx.roundRect(TRACK_X0, mid - 18, half - 6, 36, 10); ctx.fill();
-      ctx.beginPath(); ctx.roundRect(TRACK_X0 + half + 6, mid - 18, half - 6, 36, 10); ctx.fill();
-      ctx.fillStyle = '#1b1a18'; ctx.font = '600 20px "Segoe UI", system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(row.buttons[0], TRACK_X0 + (half - 6) / 2, mid + 7);
-      ctx.fillText(row.buttons[1], TRACK_X0 + half + 6 + (half - 6) / 2, mid + 7);
-      ctx.textAlign = 'left';
-      ctx.globalAlpha = 1;
+      ctx.fillText('Leave VR', TRACK_X0 + 90, mid + 8);
     } else if (row.el.type === 'checkbox') {
       ctx.strokeStyle = '#d9a441'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.roundRect(TRACK_X0, mid - 15, 30, 30, 7); ctx.stroke();
@@ -176,7 +135,7 @@ function redraw() {
     }
   });
   ctx.globalAlpha = 0.55; ctx.fillStyle = '#d8d2c4'; ctx.font = '15px "Segoe UI", system-ui, sans-serif';
-  ctx.fillText((inputsText || 'no inputs reported') + (ps.anchor ? ' · ' + ps.anchor : ''), 28, CH - 22);
+  ctx.fillText(inputsText || 'no inputs reported', 28, CH - 22);
   ctx.globalAlpha = 1;
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
@@ -268,7 +227,6 @@ export function updatePanel(xrFrame, session, space, selecting) {
   if (use.pressed && !pressedBefore && hover.row >= 0) {
     const el = ROWS[hover.row].el;
     if (ROWS[hover.row].action === 'exit') onExit();
-    else if (ROWS[hover.row].action) onPlace(ROWS[hover.row].action, hover.x < (TRACK_X0 + TRACK_X1) / 2 ? -1 : 1, use.src);
     else if (el.type === 'checkbox') el.checked = !el.checked;
     else grabbed = hover.row;
     // taking a slider takes over from automatic playback

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rozsda — Machine Hallucination</title>
-<link rel="stylesheet" href="ar-915844a-2609171612/style.css">
+<link rel="stylesheet" href="ar-995fc8b-2609171714/style.css">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -28,14 +28,14 @@
     <option value="1000000">Desktop · 1M</option>
     <option value="2400000">Desktop · 2.4M</option>
   </select></label>
-  <label><span class="name">Headset</span><button id="vr" hidden>Enter AR</button></label>
+  <label><span class="name">Headset</span><button id="vr" hidden>Enter VR</button></label>
   <div id="stats"></div>
   <div id="error" hidden></div>
-  <div id="hint">set sliders here, then Enter AR · desktop: drag orbit · right-drag pan · wheel zoom · WASDQE fly<br>in AR: panel in front of you, touch it with a fingertip or point + trigger / pinch · left X hide · Y call back<br>leave AR: Leave AR on the panel, both thumbsticks clicked, or the Meta button<br>left trigger / pinch pick up + put down · left stick turn + resize · right stick separate · A pieces · B auto</div>
+  <div id="hint">set sliders here, then Enter VR · desktop: drag orbit · right-drag pan · wheel zoom · WASDQE fly<br>in VR: the triptych stands 2 m ahead of where you start (Meta button hold recentres) · panel in front of you, touch it with a fingertip or point + trigger / pinch · hide on the panel or left X · Y or both hands pinched 1.5 s call it back<br>leave VR: Leave VR on the panel, both thumbsticks clicked, or the Meta button<br>right stick separate · A pieces · B auto</div>
 </div>
 
-<script src="../assets/painting-data.js?v=915844a-2609171612"></script>
-<script src="../assets/meshes.js?v=915844a-2609171612"></script>
+<script src="../assets/painting-data.js?v=995fc8b-2609171714"></script>
+<script src="../assets/meshes.js?v=995fc8b-2609171714"></script>
 <!-- the asset scripts declare top-level consts, which modules cannot import -->
 <script>window.ASSETS = { IMG_W, IMG_H, PIECES, PAINTING_DATA_URI };</script>
 <!-- a headset has no console to read: show any failure in the panel -->
@@ -54,12 +54,12 @@ if (location.protocol === 'file:') document.body.insertAdjacentHTML('afterbegin'
   'This page is built from ES modules, which browsers will not load from a double-clicked file.<br>' +
   'From the repo root run <b>node scripts/serve.js</b>, then open <b>http://localhost:8080/xr/ar.html</b></div>');
 </script>
-<script>window.BUILD = '915844a-2609171612';
+<script>window.BUILD = '995fc8b-2609171714';
 fetch('../build.json?t=' + Date.now(), { cache: 'no-store' })
   .then(r => r.json())
   .then(b => { if (b.build !== window.BUILD) location.replace('ar-' + b.build + '.html' + location.search + location.hash); })
   .catch(() => {});
 </script>
-<script type="module" src="ar-915844a-2609171612/main.js"></script>
+<script type="module" src="ar-995fc8b-2609171714/main.js"></script>
 </body>
 </html>

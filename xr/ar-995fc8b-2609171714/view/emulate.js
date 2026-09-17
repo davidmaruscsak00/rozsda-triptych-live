@@ -71,7 +71,7 @@ const emptyVao = gl.createVertexArray();
 
 // standing at the origin looking down -z; the installation dropped BACK_M ahead
 const head = { x: 0, y: EYE_Y, z: 0 };
-place.x = 0; place.z = -BACK_M; place.placed = true;
+place.x = 0; place.z = -BACK_M;
 faceViewer(head);
 updatePlacement();
 
