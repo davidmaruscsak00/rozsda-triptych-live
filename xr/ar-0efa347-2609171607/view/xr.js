@@ -8,7 +8,7 @@ import { update, runShadowPass, drawScene } from '../scene/render.js';
 import { place, BACK_M, updatePlacement, faceViewer,
          worldFromPainting, paintingFromWorld } from './placement.js';
 import { summonPanel, togglePanel, updatePanel, drawPanel, setPanelExit, setPanelPlacement } from './panel.js';
-import { startAnchors, syncAnchor, anchorWaiting, anchorStatus, placementChanged } from './anchor.js';
+import { ANCHORS, startAnchors, syncAnchor, anchorWaiting, anchorStatus, placementChanged } from './anchor.js';
 
 // ---- WebXR session ------------------------------------------------------
 // No locomotion: in a room you walk around it on your own feet.
@@ -150,7 +150,7 @@ async function enterAR() {
   try {
     await gl.makeXRCompatible();
     const s = await navigator.xr.requestSession('immersive-ar',
-      { optionalFeatures: ['local-floor', 'hand-tracking', 'anchors'] });
+      { optionalFeatures: ['local-floor', 'hand-tracking', ...(ANCHORS ? ['anchors'] : [])] });
     xrSession = s;
     // antialias:true gives 4x MSAA that resolves inside tile memory on Adreno.
     // alpha:true is what lets passthrough through wherever nothing is drawn.

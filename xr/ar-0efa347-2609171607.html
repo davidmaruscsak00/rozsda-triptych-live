@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rozsda — Machine Hallucination</title>
-<link rel="stylesheet" href="ar-cbf78bc-2609171601/style.css">
+<link rel="stylesheet" href="ar-0efa347-2609171607/style.css">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -34,8 +34,8 @@
   <div id="hint">set sliders here, then Enter AR · desktop: drag orbit · right-drag pan · wheel zoom · WASDQE fly<br>in AR: panel in front of you, touch it with a fingertip or point + trigger / pinch · left X hide · Y call back<br>leave AR: Leave AR on the panel, both thumbsticks clicked, or the Meta button<br>left trigger / pinch pick up + put down · left stick turn + resize · right stick separate · A pieces · B auto</div>
 </div>
 
-<script src="../assets/painting-data.js?v=cbf78bc-2609171601"></script>
-<script src="../assets/meshes.js?v=cbf78bc-2609171601"></script>
+<script src="../assets/painting-data.js?v=0efa347-2609171607"></script>
+<script src="../assets/meshes.js?v=0efa347-2609171607"></script>
 <!-- the asset scripts declare top-level consts, which modules cannot import -->
 <script>window.ASSETS = { IMG_W, IMG_H, PIECES, PAINTING_DATA_URI };</script>
 <!-- a headset has no console to read: show any failure in the panel -->
@@ -54,12 +54,12 @@ if (location.protocol === 'file:') document.body.insertAdjacentHTML('afterbegin'
   'This page is built from ES modules, which browsers will not load from a double-clicked file.<br>' +
   'From the repo root run <b>node scripts/serve.js</b>, then open <b>http://localhost:8080/xr/ar.html</b></div>');
 </script>
-<script>window.BUILD = 'cbf78bc-2609171601';
+<script>window.BUILD = '0efa347-2609171607';
 fetch('../build.json?t=' + Date.now(), { cache: 'no-store' })
   .then(r => r.json())
   .then(b => { if (b.build !== window.BUILD) location.replace('ar-' + b.build + '.html' + location.search + location.hash); })
   .catch(() => {});
 </script>
-<script type="module" src="ar-cbf78bc-2609171601/main.js"></script>
+<script type="module" src="ar-0efa347-2609171607/main.js"></script>
 </body>
 </html>

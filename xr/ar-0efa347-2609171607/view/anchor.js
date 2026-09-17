@@ -15,6 +15,8 @@ import { qp } from '../config.js';
 import { place } from './placement.js';
 
 const KEY = 'rozsda.placement';
+// ?anchors=0 asks for no anchors and never touches them, for A/B on the headset
+export const ANCHORS = qp.get('anchors') !== '0';
 const SETTLE_MS = 500;                     // a stick held down is one change, not one per frame
 const RESTORE_WAIT_MS = 5000;              // how long a saved anchor may take to be found
 
@@ -33,7 +35,8 @@ export const anchorWaiting = () => restoring && performance.now() - restoreStart
 
 export function startAnchors(session) {
   anchor = null; anchorUuid = null; creating = false; dirtyAt = 0; restoring = false;
-  status = 'no anchor';
+  status = ANCHORS ? 'no anchor' : 'anchors off';
+  if (!ANCHORS) return;
   const saved = load();
   if (saved && saved.height && !qp.has('scale')) place.height = saved.height;
   if (!saved || !saved.uuid || !session.restorePersistentAnchor) return;
@@ -41,17 +44,31 @@ export function startAnchors(session) {
   place.locked = true;
   status = 'finding saved place';
   anchorUuid = saved.uuid;
-  session.restorePersistentAnchor(saved.uuid)
+  Promise.resolve().then(() => session.restorePersistentAnchor(saved.uuid))
     .then(a => { if (restoring) anchor = a; else a.delete(); })   // moved meanwhile: the new place wins
     .catch(() => { restoring = false; anchorUuid = null; place.locked = false; status = 'saved place lost'; });
   // leftovers from earlier placements count against the per-site limit
-  for (const uuid of session.persistentAnchors || [])
-    if (uuid !== saved.uuid && session.deletePersistentAnchor) session.deletePersistentAnchor(uuid).catch(() => {});
+  try {
+    for (const uuid of session.persistentAnchors || [])
+      if (uuid !== saved.uuid && session.deletePersistentAnchor) session.deletePersistentAnchor(uuid).catch(() => {});
+  } catch (e) {}
 }
 
 // Once per frame, before the placement is used. Returns true when the
 // placement came from the anchor this frame.
+// Never throws: an anchor call that throws inside the XR frame would skip the
+// hands, the board and the drawing for that frame, every frame.
 export function syncAnchor(frame, session, space) {
+  if (!ANCHORS) return false;
+  try {
+    return syncAnchorUnsafe(frame, session, space);
+  } catch (e) {
+    anchor = null; creating = false; restoring = false;
+    status = 'anchor error: ' + (e && e.message || e);
+    return false;
+  }
+}
+function syncAnchorUnsafe(frame, session, space) {
   if (place.carrying) return false;
   if (dirtyAt && !creating && performance.now() - dirtyAt > SETTLE_MS) {
     dirtyAt = 0;
